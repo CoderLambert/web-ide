@@ -4,6 +4,18 @@
 
 第一版 LSP 不启用 Semantic Tokens；Highlight 仍由 Tree-sitter 独占。
 
+## Web-first Transport Boundary（冻结）
+
+当前 Web 链路保持：
+
+```text
+Browser → WebSocket → Gateway → Language Server
+```
+
+Semantic / LSP 上层只能依赖 transport boundary 和 session contract，不得直接把 WebSocket 写死在语义业务层。Transport boundary 只实现当前 Web 所需程度。
+
+不要实现 Desktop stdio，也不要实现 Neovim adapter。Desktop / Neovim 只作为未来架构边界检查；不得借 M3 提前建设 UniversalPlatform、UniversalEditor 或 UniversalTreeSitterEngine。
+
 ---
 
 # LSP-01 — Gateway Protocol / Session Contract

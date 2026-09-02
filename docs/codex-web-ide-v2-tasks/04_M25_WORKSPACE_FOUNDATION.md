@@ -4,6 +4,18 @@
 
 这是 LSP 的硬前置条件。
 
+## Source of Truth 与 Web-first 边界（冻结）
+
+```text
+Backend Workspace Filesystem = persisted file content Source of Truth
+Monaco Model                = open document / dirty overlay
+Database                    = workspace metadata
+```
+
+M2.5 只保留薄的 `WorkspaceFileSystem` boundary，并且当前只实现 Web 所需的 adapter。Backend host 的 real path 只能存在于 adapter 内，不能泄露到 Browser / Domain。
+
+禁止为同一份 persisted content 建立双 Source of Truth；Monaco 的未保存内容必须作为 overlay 管理，不能反向取代 Backend persisted content。Desktop / Neovim 仅作为未来架构边界检查，不在 M2.5 提前实现跨平台 filesystem/runtime adapter。
+
 ---
 
 # W-01 — WorkspaceIdentity + Canonical URI

@@ -63,6 +63,23 @@ DAP            = Debug
 - 把 LSP/DAP 长期进程塞进一次性 Server Function。
 - 将 Worker 当作用户代码 Source of Truth。
 
+### Web-first 架构边界（冻结）
+
+当前实现只服务 Web 当前需要的能力。Desktop / Neovim 只用于未来架构边界检查，不提前实现跨平台 Runtime。
+
+禁止提前建设：
+
+- `UniversalPlatform`
+- `UniversalEditor`
+- `UniversalTreeSitterEngine`
+
+后续阶段必须遵守：
+
+- Workspace 的 persisted file content 是 Source of Truth；Monaco 只表示 open document / dirty overlay。
+- Backend real path 不得泄露到 Browser 或 Domain；Browser / Domain 只使用 canonical URI。
+- Semantic / LSP 上层依赖 transport boundary，不把当前 WebSocket 实现写死为上层 API。
+- 不为 Desktop stdio 或 Neovim adapter 预留超出当前 Web 需求的实现。
+
 ---
 
 ## 4. 每个任务的固定执行循环
