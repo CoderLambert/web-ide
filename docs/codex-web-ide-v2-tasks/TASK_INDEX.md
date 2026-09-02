@@ -18,22 +18,28 @@ S0-06 ──┘
 
 ## Phase M1
 
+详细执行入口：`m1/00_M1_EXECUTION_INDEX.md`
+
 ```text
-M1-01 ─┐
-       ├→ M1-03 → M1-04 → M1-05 → M1-06
-M1-02 ─┘              │
-   │                   │
-   └→ M1-07 ───────────┘
-              ↓
-            M1-08
-              ↓
-            M1-09
-              ↓
-            M1-10
-              ↓
-            M1-11
-              ↓
-            M1-12 → REVIEW
+M1-01 Registry ─┐
+                ├→ M1-03 Runtime → M1-04 Sessions → M1-05 WorkerHost → M1-06 Supervisor
+M1-02 Protocol ─┘                                                        │
+       ├────────────────────────────────────────────────────────────────→ M1-07 Client
+       └→ M1-08 EditCodec
+
+M1-04 + M1-05 + M1-08
+        ↓
+M1-09 Incremental
+        ↓
+M1-10 Full Resync
+        ↓
+M1-11 Monaco Binding
+        ├→ M1-12 Recovery ─┐
+        └→ M1-13 Inspector ┤
+                           ↓
+                    M1-14 Final Gate
+                           ↓
+                         REVIEW
 ```
 
 ## Phase M2
