@@ -1,5 +1,7 @@
-import type { Tree } from "web-tree-sitter";
+import type { Range, Tree } from "web-tree-sitter";
 
+import type { ApplyChanges, ParseResult, TextPosition, TextRange } from "../protocol";
+import { encodeEditTransaction, EditCodecError } from "../edit-codec";
 import type { OpenDocumentInput, DocumentSession } from "./document-session";
 import { WorkerRuntime } from "./runtime";
 
@@ -8,7 +10,9 @@ export type DocumentManagerErrorCode =
   | "UNKNOWN_LANGUAGE"
   | "DOCUMENT_ALREADY_OPEN"
   | "SESSION_ALREADY_OPEN"
-  | "PARSE_FAILED";
+  | "SESSION_NOT_FOUND"
+  | "PARSE_FAILED"
+  | "RESYNC_REQUIRED";
 
 export class DocumentManagerError extends Error {
   readonly code: DocumentManagerErrorCode;
@@ -78,6 +82,110 @@ export class DocumentManager {
     this.sessionsById.set(session.sessionId, session);
     this.sessionIdByUri.set(session.documentUri, session.sessionId);
     return session;
+  }
+
+  async applyChanges(request: ApplyChanges): Promise<ParseResult> {
+    const session = this.sessionsById.get(request.sessionId);
+    if (session === undefined || session.documentUri !== request.documentUri) {
+      throw new DocumentManagerError(
+        "SESSION_NOT_FOUND",
+        `Session "${request.sessionId}" does not own document "${request.documentUri}".`,
+      );
+    }
+    if (session.state === "desynced") {
+      throw new DocumentManagerError(
+        "RESYNC_REQUIRED",
+        `Session "${request.sessionId}" requires a full document resync.`,
+      );
+    }
+    if (session.documentVersion !== request.baseVersion) {
+      throw new DocumentManagerError(
+        "RESYNC_REQUIRED",
+        `Document version ${session.documentVersion} does not match baseVersion ${request.baseVersion}.`,
+      );
+    }
+
+    let transaction;
+    try {
+      transaction = encodeEditTransaction(session.textMirror, request.changes);
+    } catch (error: unknown) {
+      const message =
+        error instanceof EditCodecError
+          ? error.message
+          : `Invalid edit transaction: ${errorMessage(error)}`;
+      throw new DocumentManagerError("RESYNC_REQUIRED", message);
+    }
+
+    const languageRuntime = await this.runtime.loadLanguage(session.languageId);
+    const parser = await languageRuntime.getParser();
+    if (
+      this.sessionsById.get(request.sessionId) !== session ||
+      session.documentVersion !== request.baseVersion
+    ) {
+      throw new DocumentManagerError(
+        "RESYNC_REQUIRED",
+        `Session "${request.sessionId}" changed while applying edits.`,
+      );
+    }
+
+    const oldTree = session.tree;
+    let newTree: Tree | null = null;
+    let treeWasEdited = transaction.inputEdits.length > 0;
+    try {
+      for (const inputEdit of transaction.inputEdits) {
+        treeWasEdited = true;
+        oldTree.edit(inputEdit);
+      }
+
+      const parseStartedAt = globalThis.performance.now();
+      newTree = parser.parse(transaction.stagedText, oldTree);
+      const parseTimeMs = globalThis.performance.now() - parseStartedAt;
+      if (newTree === null) {
+        throw new Error("parser returned no tree");
+      }
+
+      const changedRanges = oldTree
+        .getChangedRanges(newTree)
+        .map((range) => treeSitterRangeToTextRange(transaction.stagedText, range));
+      const hasErrors = newTree.rootNode.hasError;
+
+      oldTree.delete();
+      session.tree = newTree;
+      newTree = null;
+      session.textMirror = transaction.stagedText;
+      session.documentVersion = request.nextVersion;
+      session.state = "ready";
+
+      return {
+        type: "ParseResult",
+        protocolVersion: request.protocolVersion,
+        workerGeneration: request.workerGeneration,
+        requestId: request.requestId,
+        sessionId: session.sessionId,
+        documentUri: session.documentUri,
+        documentVersion: session.documentVersion,
+        parseTimeMs,
+        hasErrors,
+        changedRanges,
+      };
+    } catch (error: unknown) {
+      if (newTree !== null) {
+        safelyDelete(newTree);
+      }
+      if (treeWasEdited) {
+        safelyDelete(oldTree);
+        session.state = "desynced";
+        throw new DocumentManagerError(
+          "RESYNC_REQUIRED",
+          `Incremental parse failed for "${session.documentUri}": ${errorMessage(error)}`,
+        );
+      }
+
+      throw new DocumentManagerError(
+        "PARSE_FAILED",
+        `Incremental parse failed for "${session.documentUri}": ${errorMessage(error)}`,
+      );
+    }
   }
 
   getSession(sessionId: string): DocumentSession | undefined {
@@ -151,5 +259,86 @@ export class DocumentManager {
         `Session "${input.sessionId}" is already open.`,
       );
     }
+  }
+}
+
+const encoder = new TextEncoder();
+
+function utf8ByteLength(text: string): number {
+  return encoder.encode(text).byteLength;
+}
+
+function lineAt(text: string, row: number): string {
+  let currentRow = 0;
+  let lineStart = 0;
+  for (let index = 0; index <= text.length; index += 1) {
+    if (index === text.length || text.charCodeAt(index) === 0x0a) {
+      if (currentRow === row) {
+        return text.slice(lineStart, index);
+      }
+      currentRow += 1;
+      lineStart = index + 1;
+    }
+  }
+
+  throw new Error(`Tree-sitter returned an invalid row ${row}.`);
+}
+
+function utf8ColumnToUtf16(line: string, byteColumn: number): number {
+  if (!Number.isInteger(byteColumn) || byteColumn < 0) {
+    throw new Error(`Tree-sitter returned an invalid byte column ${byteColumn}.`);
+  }
+
+  let bytes = 0;
+  let codeUnits = 0;
+  while (codeUnits < line.length) {
+    if (bytes === byteColumn) {
+      return codeUnits;
+    }
+
+    const codePoint = line.codePointAt(codeUnits);
+    if (codePoint === undefined) {
+      break;
+    }
+    const codeUnitLength = codePoint > 0xffff ? 2 : 1;
+    bytes += utf8ByteLength(line.slice(codeUnits, codeUnits + codeUnitLength));
+    codeUnits += codeUnitLength;
+    if (bytes > byteColumn) {
+      throw new Error(`Tree-sitter returned a byte column inside a code point: ${byteColumn}.`);
+    }
+  }
+
+  if (bytes === byteColumn) {
+    return codeUnits;
+  }
+  throw new Error(`Tree-sitter returned a byte column outside the line: ${byteColumn}.`);
+}
+
+function treeSitterPositionToTextPosition(
+  text: string,
+  position: { row: number; column: number },
+): TextPosition {
+  if (!Number.isInteger(position.row) || position.row < 0) {
+    throw new Error(`Tree-sitter returned an invalid row ${position.row}.`);
+  }
+
+  return {
+    line: position.row,
+    character: utf8ColumnToUtf16(lineAt(text, position.row), position.column),
+  };
+}
+
+function treeSitterRangeToTextRange(text: string, range: Range): TextRange {
+  return {
+    start: treeSitterPositionToTextPosition(text, range.startPosition),
+    end: treeSitterPositionToTextPosition(text, range.endPosition),
+  };
+}
+
+function safelyDelete(tree: Tree): void {
+  try {
+    tree.delete();
+  } catch {
+    // The tree is already invalid after an incremental failure; preserve RESYNC_REQUIRED.
   }
 }
