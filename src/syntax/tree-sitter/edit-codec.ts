@@ -23,8 +23,6 @@ export class EditCodecError extends Error {
   readonly code = "INVALID_EDIT_TRANSACTION" as const;
 }
 
-const encoder = new TextEncoder();
-
 function invalid(message: string): never {
   throw new EditCodecError(message);
 }
@@ -43,32 +41,77 @@ function isSurrogateSplit(text: string, offset: number): boolean {
   return previous >= 0xd800 && previous <= 0xdbff && next >= 0xdc00 && next <= 0xdfff;
 }
 
-function utf8ByteLength(text: string): number {
-  return encoder.encode(text).byteLength;
+interface TextMetrics {
+  byteOffsets: Uint32Array;
+  lineStarts: number[];
 }
 
-function pointAtOffset(text: string, offset: number): TreeSitterPoint {
-  let row = 0;
-  let column = 0;
-
-  for (let index = 0; index < offset;) {
+function utf8ByteLength(text: string): number {
+  let byteLength = 0;
+  for (let index = 0; index < text.length;) {
     const codePoint = text.codePointAt(index);
     if (codePoint === undefined) {
-      invalid(`Offset ${offset} is outside the text.`);
+      invalid("Text contains an invalid code point.");
+    }
+    byteLength += utf8BytesForCodePoint(codePoint);
+    index += codePoint > 0xffff ? 2 : 1;
+  }
+  return byteLength;
+}
+
+function utf8BytesForCodePoint(codePoint: number): number {
+  if (codePoint <= 0x7f) {
+    return 1;
+  }
+  if (codePoint <= 0x7ff) {
+    return 2;
+  }
+  if (codePoint <= 0xffff) {
+    return 3;
+  }
+  return 4;
+}
+
+function createTextMetrics(text: string): TextMetrics {
+  const byteOffsets = new Uint32Array(text.length + 1);
+  const lineStarts = [0];
+  let byteOffset = 0;
+
+  for (let index = 0; index < text.length;) {
+    const codePoint = text.codePointAt(index);
+    if (codePoint === undefined) {
+      invalid("Text contains an invalid code point.");
     }
 
     const codeUnitLength = codePoint > 0xffff ? 2 : 1;
-    const codePointText = text.slice(index, index + codeUnitLength);
+    byteOffset += utf8BytesForCodePoint(codePoint);
+    for (let codeUnit = 1; codeUnit <= codeUnitLength; codeUnit += 1) {
+      byteOffsets[index + codeUnit] = byteOffset;
+    }
     if (codePoint === 0x0a) {
-      row += 1;
-      column = 0;
-    } else {
-      column += utf8ByteLength(codePointText);
+      lineStarts.push(index + codeUnitLength);
     }
     index += codeUnitLength;
   }
 
-  return { row, column };
+  return { byteOffsets, lineStarts };
+}
+
+function pointAtOffset(metrics: TextMetrics, offset: number): TreeSitterPoint {
+  let low = 0;
+  let high = metrics.lineStarts.length;
+  while (low < high) {
+    const middle = Math.floor((low + high) / 2);
+    if ((metrics.lineStarts[middle] ?? 0) <= offset) {
+      low = middle + 1;
+    } else {
+      high = middle;
+    }
+  }
+
+  const row = Math.max(0, low - 1);
+  const lineStart = metrics.lineStarts[row] ?? 0;
+  return { row, column: metrics.byteOffsets[offset] - metrics.byteOffsets[lineStart] };
 }
 
 function pointAfterText(start: TreeSitterPoint, text: string): TreeSitterPoint {
@@ -82,12 +125,11 @@ function pointAfterText(start: TreeSitterPoint, text: string): TreeSitterPoint {
     }
 
     const codeUnitLength = codePoint > 0xffff ? 2 : 1;
-    const codePointText = text.slice(index, index + codeUnitLength);
     if (codePoint === 0x0a) {
       row += 1;
       column = 0;
     } else {
-      column += utf8ByteLength(codePointText);
+      column += utf8BytesForCodePoint(codePoint);
     }
     index += codeUnitLength;
   }
@@ -141,17 +183,22 @@ export function encodeEditTransaction(
   }
 
   const sortedChanges = validateChanges(text, changes);
+  if (sortedChanges.length === 0) {
+    return { stagedText: text, inputEdits: [] };
+  }
+
   let stagedText = text;
   const inputEdits: InputEdit[] = [];
+  const metrics = createTextMetrics(text);
 
   for (const change of sortedChanges) {
     const startOffset = change.rangeOffset;
     const endOffset = startOffset + change.rangeLength;
-    const startPosition = pointAtOffset(stagedText, startOffset);
-    const oldEndPosition = pointAtOffset(stagedText, endOffset);
+    const startPosition = pointAtOffset(metrics, startOffset);
+    const oldEndPosition = pointAtOffset(metrics, endOffset);
     const newEndPosition = pointAfterText(startPosition, change.text);
-    const startIndex = utf8ByteLength(stagedText.slice(0, startOffset));
-    const oldEndIndex = startIndex + utf8ByteLength(stagedText.slice(startOffset, endOffset));
+    const startIndex = metrics.byteOffsets[startOffset] ?? 0;
+    const oldEndIndex = metrics.byteOffsets[endOffset] ?? startIndex;
     const newEndIndex = startIndex + utf8ByteLength(change.text);
 
     inputEdits.push({

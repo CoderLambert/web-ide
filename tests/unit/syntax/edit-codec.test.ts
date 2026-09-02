@@ -69,6 +69,27 @@ describe("EditCodec", () => {
     expect(transaction.inputEdits[2]?.startIndex).toBe(1);
   });
 
+  it("keeps original UTF-8 positions for a Unicode batch transaction", () => {
+    const transaction = encodeEditTransaction("前😀 middle\n尾", [
+      { rangeOffset: 1, rangeLength: 2, text: "后" },
+      { rangeOffset: 9, rangeLength: 1, text: "终" },
+    ]);
+
+    expect(transaction.stagedText).toBe("前后 middl终\n尾");
+    expect(transaction.inputEdits).toMatchObject([
+      {
+        startPosition: { row: 0, column: 13 },
+        oldEndPosition: { row: 0, column: 14 },
+        newEndPosition: { row: 0, column: 16 },
+      },
+      {
+        startPosition: { row: 0, column: 3 },
+        oldEndPosition: { row: 0, column: 7 },
+        newEndPosition: { row: 0, column: 6 },
+      },
+    ]);
+  });
+
   it("uses UTF-8 byte columns while retaining UTF-16 input offsets", () => {
     const transaction = new EditCodec().encode("中😀x", [
       { rangeOffset: 3, rangeLength: 1, text: "y" },
