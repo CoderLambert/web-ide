@@ -18,25 +18,21 @@ Semantic / LSP 上层只能依赖 transport boundary 和 session contract，不�
 
 ## Workspace Filesystem View（冻结）
 
-Language Server 必须看到与 canonical `rootUri` 一致的 filesystem view。Web 当前推荐：
+Language Server 必须能够通过 canonical `rootUri` 访问对应的 workspace filesystem view。这里冻结的是 URI 与实际可访问文件视图的一致性约束，不提前锁死具体部署实现。
 
-```text
-Backend real workspace
-        ↓ mount / jail
-    /workspace
-        ↓
-file:///workspace/...
-```
-
-因此：
+优先目标：
 
 ```text
 Browser URI
   = LSP URI
-  = Language Server 可访问的逻辑 filesystem view
+  = Language Server 可访问的逻辑 filesystem URI
 ```
 
-Workspace persisted content 仍只来自 Backend Workspace Filesystem；未保存内容通过 LSP document overlay 传递。Semantic / LSP 上层只依赖 canonical URI 与 transport/session boundary，不直接依赖 host path，也不默认设计复杂 JSON-RPC URI rewrite。
+Web 实现时优先通过 mount、jail、container filesystem mapping 或部署环境提供的等价机制，让 Language Server 直接看到与 canonical URI 一致的 workspace namespace。具体采用哪种机制，在 M3 根据实际部署环境决定。
+
+如果部署环境无法提供一致的 filesystem namespace，M3 必须显式设计并测试 URI / path mapping；不要默认引入复杂 JSON-RPC URI rewrite。
+
+Workspace persisted content 仍只来自 Backend Workspace Filesystem；未保存内容通过 LSP document overlay 传递。Semantic / LSP 上层只依赖 canonical URI 与 transport/session boundary，不直接依赖 host path。
 
 ---
 
