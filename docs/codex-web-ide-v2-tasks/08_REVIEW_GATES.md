@@ -88,15 +88,19 @@ Recovery 期间 pending request bounded 且不会因 restore response 误杀新 
 
 冻结边界：当前链路仍是 Browser → WebSocket → Gateway → Language Server；Semantic / LSP 上层不得直接写死 WebSocket。Transport 只做到当前 Web 所需程度，不实现 Desktop stdio 或 Neovim adapter。
 
-额外检查：Language Server 必须看到与 canonical `rootUri` 一致的 filesystem view。Web 默认由 Backend real workspace 通过 mount / jail 暴露为 `/workspace`，使：
+额外检查：Language Server 必须能够通过 canonical `rootUri` 访问对应的 workspace filesystem view。冻结的是 URI 与实际可访问文件视图的一致性，不冻结 mount / jail / container filesystem mapping 等具体部署机制。
+
+优先目标：
 
 ```text
 Browser URI
   = LSP URI
-  = Language Server 可访问的逻辑 filesystem view
+  = Language Server 可访问的逻辑 filesystem URI
 ```
 
-红线：LSP URI 与 Language Server 实际 filesystem view 不一致 → `M3 FAIL`。不要默认引入复杂 JSON-RPC URI rewrite。
+具体 filesystem namespace 机制在 M3 根据实际部署环境决定。如果环境无法提供一致 namespace，必须显式设计并测试 URI / path mapping；不要默认引入复杂 JSON-RPC URI rewrite。
+
+红线：canonical LSP URI 无法解析到 Language Server 实际可访问的 workspace filesystem view → `M3 FAIL`。
 
 ---
 
