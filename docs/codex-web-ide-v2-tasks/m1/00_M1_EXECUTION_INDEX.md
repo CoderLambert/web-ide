@@ -29,15 +29,15 @@ M1-11 Monaco Binding
 
 ## 文档
 
-| 文档 | 任务 | 主题 |
-|---|---|---|
-| `01_LANGUAGE_PROTOCOL.md` | M1-01 ~ M1-02 | Registry、Unit Test、Protocol |
-| `02_RUNTIME_SESSIONS.md` | M1-03 ~ M1-04 | Runtime、Language、DocumentSession |
-| `03_WORKER_CLIENT.md` | M1-05 ~ M1-07 | FIFO WorkerHost、Supervisor Core、Client |
-| `04_EDIT_INCREMENTAL.md` | M1-08 ~ M1-09 | UTF-16/UTF-8、事务、Incremental Parse |
-| `05_RESYNC_MONACO.md` | M1-10 ~ M1-11 | Full Resync、真实 Monaco Binding |
-| `06_RECOVERY_INSPECTOR.md` | M1-12 ~ M1-13 | Worker Recovery、AST Inspector |
-| `07_M1_FINAL_GATE.md` | M1-14 | Integration、Performance、Resource Gate |
+| 文档                       | 任务          | 主题                                     |
+| -------------------------- | ------------- | ---------------------------------------- |
+| `01_LANGUAGE_PROTOCOL.md`  | M1-01 ~ M1-02 | Registry、Unit Test、Protocol            |
+| `02_RUNTIME_SESSIONS.md`   | M1-03 ~ M1-04 | Runtime、Language、DocumentSession       |
+| `03_WORKER_CLIENT.md`      | M1-05 ~ M1-07 | FIFO WorkerHost、Supervisor Core、Client |
+| `04_EDIT_INCREMENTAL.md`   | M1-08 ~ M1-09 | UTF-16/UTF-8、事务、Incremental Parse    |
+| `05_RESYNC_MONACO.md`      | M1-10 ~ M1-11 | Full Resync、真实 Monaco Binding         |
+| `06_RECOVERY_INSPECTOR.md` | M1-12 ~ M1-13 | Worker Recovery、AST Inspector           |
+| `07_M1_FINAL_GATE.md`      | M1-14         | Integration、Performance、Resource Gate  |
 
 ## 可并行
 

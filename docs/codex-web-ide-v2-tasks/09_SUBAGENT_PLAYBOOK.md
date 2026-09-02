@@ -67,15 +67,19 @@ Monaco Binding 未 PASS -> Recovery
 # 3. 其它阶段推荐并行点
 
 ## M2
+
 QueryManager/Capture DTO 稳定后，Highlight / Folding / Selection 可分给三个 Agent。
 
 ## M2.5
+
 URI Contract 冻结后，WorkspaceStore / Backend FileStore 可并行；Dirty Overlay 不提前并行。
 
 ## M3
+
 协议冻结后，Gateway transport / process lifecycle / security tests 可拆分；SQL LS 选择适合独立 Spike Agent。
 
 ## M4
+
 TypeScript / Python / Formatter 可并行，前提是禁止修改核心 Engine。
 
 ---

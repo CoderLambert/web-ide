@@ -5,16 +5,20 @@
 依赖：`M1-09 PASS`
 
 ### 目标
+
 为所有无法安全增量处理的情况提供统一正确性逃生通道。
 
 ### 允许修改
+
 ```text
 src/syntax/tree-sitter/worker/document-manager.ts
 相关 unit/integration tests
 ```
 
 ### 实现
+
 `ReplaceDocument` 接收 authoritative full snapshot：
+
 ```text
 documentUri
 sessionId
@@ -23,6 +27,7 @@ text
 ```
 
 流程：
+
 ```text
 full parse new text
 -> success
@@ -34,6 +39,7 @@ full parse new text
 如果 full parse 失败，不破坏旧状态。
 
 ### 必须覆盖
+
 ```text
 version mismatch
 mirror mismatch
@@ -44,6 +50,7 @@ EOL reset
 ```
 
 ### 禁止
+
 不尝试复杂 rollback；不为异常强行继续 incremental。
 
 ---
@@ -53,9 +60,11 @@ EOL reset
 依赖：`M1-07 PASS`, `M1-10 PASS`
 
 ### 目标
+
 首次建立真实 Monaco Model -> Syntax Foundation 链路。
 
 ### 允许修改
+
 ```text
 src/editor/monaco/syntax-document-binding.ts
 必要的 composition/probe 文件
@@ -63,9 +72,11 @@ src/editor/monaco/syntax-document-binding.ts
 ```
 
 ### 边界
+
 `src/syntax/**` 绝不能 import Monaco。
 
 Binding 负责：
+
 ```text
 bind model -> create sessionId -> OpenDocument(full snapshot)
 content change -> ApplyChanges(baseVersion,nextVersion)
@@ -79,6 +90,7 @@ model dispose -> CloseDocument + dispose listeners
 使用真实 `event.versionId`；不要假设版本只加 1。
 
 ### 验证
+
 - 真实 Monaco typing 驱动 Worker parse。
 - undo/redo。
 - setValue/flush。
@@ -89,13 +101,17 @@ model dispose -> CloseDocument + dispose listeners
 - Syntax Core 无 Monaco import。
 
 ### 页面验收
+
 `/ide` 只需增加最小开发者状态：
+
 ```text
 documentVersion
 parseTime
 hasErrors
 ```
+
 不要做产品 UI。
 
 ## Stop Rule
+
 M1-10/11 分别验证、review、commit、push。Binding PASS 前禁止 Worker Recovery。

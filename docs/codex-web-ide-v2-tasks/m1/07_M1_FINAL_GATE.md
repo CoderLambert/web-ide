@@ -3,9 +3,11 @@
 依赖：`M1-01 ~ M1-13 PASS`
 
 ## 目标
+
 不新增功能，只做整阶段验证、修复和最终 Review。
 
 ## 必须验证
+
 ```text
 Language Registry
 Protocol runtime validation
@@ -31,7 +33,9 @@ production build/preview
 ```
 
 ## Performance Fixture
+
 使用 deterministic generator 生成固定：
+
 ```text
 100KB valid SQL
 1MB valid SQL
@@ -40,6 +44,7 @@ production build/preview
 不要提交巨大手写 fixture。
 
 测量建议：
+
 ```text
 warmup: 10 edits
 measurement: 100 edits
@@ -50,6 +55,7 @@ main-thread request->result P50/P95
 `incremental parse P95 < 50ms` 当前作为 reference target；CI hardware 未固定前，不因单机略超 50ms 自动重构架构。
 
 硬 Gate：
+
 ```text
 100KB 连续编辑正确
 1MB open 正确
@@ -59,22 +65,29 @@ Worker 不 crash
 ```
 
 ## Resource Gate
+
 20 次 open/close 后：
+
 ```text
 DocumentSession count = 0
 Tree count = 0
 pending request count = 0
 ```
+
 Parser/LanguageRuntime 可缓存到 Worker 生命周期结束。
 
 ## 验证命令
+
 最终建议建立：
+
 ```bash
 pnpm verify:m1
 ```
+
 保持简单，不引入新 Task Runner。
 
 至少组合：
+
 ```text
 unit tests
 S0 E2E
@@ -86,7 +99,9 @@ production preview
 ```
 
 ## Final Review 红线
+
 任何一项存在则 M1 FAIL：
+
 ```text
 Syntax Core import Monaco
 业务层拿 SyntaxNode/Tree
@@ -103,9 +118,11 @@ recovery 丢用户编辑
 ```
 
 ## 上游风险记录
+
 M1 不使用 Query，不因为未来 Query 风险升级 `web-tree-sitter`。进入 M2 Query Gate 时单独重新审查 Query 内存行为。
 
 ## 完成条件
+
 ```text
 M1-01 ~ M1-14 PASS
 M1 Review PASS
