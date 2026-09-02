@@ -19,12 +19,14 @@
     "lint": "vp lint",
     "check": "vp check",
     "test": "playwright test",
+    "test:m1": "playwright test tests/m1",
     "test:s0:lsp": "playwright test tests/s0/lsp-jsonrpc.spec.ts",
     "test:s0:monaco": "playwright test tests/s0/monaco-lifecycle.spec.ts",
     "test:s0:sql-parse": "playwright test tests/s0/sql-parse.spec.ts",
     "test:s0:sql-grammar": "playwright test tests/s0/sql-grammar-load.spec.ts",
     "test:s0:tree-sitter": "playwright test tests/s0/tree-sitter-runtime.spec.ts",
-    "verify:s0": "node scripts/verify-s0.mjs"
+    "verify:s0": "node scripts/verify-s0.mjs",
+    "verify:m1": "node scripts/verify-m1.mjs"
   },
   "dependencies": {
     "@codingame/monaco-vscode-api": "25.1.2",
