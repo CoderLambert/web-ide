@@ -1,0 +1,81 @@
+{
+  "schemaVersion": 1,
+  "verifiedAt": "2026-09-02",
+  "environment": {
+    "node": "24.20.0",
+    "pnpm": "11.25.0",
+    "platform": "linux-x64"
+  },
+  "application": {
+    "react": "19.2.0",
+    "reactDom": "19.2.0",
+    "tanstackReactStart": "1.168.49",
+    "tanstackReactRouter": "1.170.32",
+    "tanstackRouterCli": "1.167.33",
+    "vitePlus": "0.3.0",
+    "vitePlusCore": "0.3.0",
+    "viteBundledByVitePlus": "8.2.2",
+    "typescript": "6.0.3"
+  },
+  "monacoCompatibilityGroup": {
+    "monacoEditor": "0.55.1",
+    "monacoLanguageClient": "10.7.0",
+    "codingameMonacoVscodeApi": "25.1.2"
+  },
+  "treeSitter": {
+    "webTreeSitter": "0.25.10",
+    "treeSitterCli": "0.25.10",
+    "treeSitterCliRevision": "da6fe9beb4f7f67beb75914ca8e0d48ae48d6406",
+    "emscripten": "4.0.4"
+  },
+  "sqlGrammar": {
+    "repository": "https://github.com/DerekStride/tree-sitter-sql.git",
+    "revision": "7b51ecda191d36b92f5a90a8d1bc3faef1c7b8b8",
+    "tag": "v0.3.11",
+    "abi": 15,
+    "wasmPath": "public/languages/sql/tree-sitter-sql.wasm",
+    "wasmBytes": 2468133,
+    "wasmSha256": "d16a31c479635dbe97ef89be8b49c6e55efd201e1d3520ac54fe92095a34c4d2",
+    "licenseSha256": "3b3e4e4252d5d7d1c18e1257005f23242bf0580ad619204fd093c99b8c56748d"
+  },
+  "lsp": {
+    "monacoLanguageClient": "10.7.0",
+    "vscodeWsJsonRpc": "3.5.0",
+    "ws": "8.21.3",
+    "transport": "WebSocket / JSON-RPC 2.0",
+    "mockMethods": ["initialize", "initialized", "s0/echo", "shutdown", "exit"]
+  },
+  "verification": {
+    "commands": [
+      "pnpm install --frozen-lockfile",
+      "pnpm typecheck",
+      "pnpm check",
+      "pnpm test",
+      "pnpm build",
+      "pnpm preview",
+      "pnpm verify:s0"
+    ],
+    "results": {
+      "installFrozen": "PASS",
+      "typecheck": "PASS",
+      "check": "PASS",
+      "tests": "PASS: 5 Playwright tests",
+      "productionBuild": "PASS",
+      "productionPreview": "PASS",
+      "productionE2E": "PASS: 5 Playwright tests"
+    },
+    "coverage": [
+      "Monaco create/dispose/remount",
+      "Tree-sitter Worker init/terminate/restart",
+      "SQL grammar WASM load",
+      "SQL parse",
+      "LSP connect/initialize/request/disconnect/reconnect/dispose",
+      "zero browser console errors",
+      "zero uncaught page errors"
+    ],
+    "notes": [
+      "Emscripten 4.0.4 and the SQL WASM build were validated when S0-04 produced the pinned artifact; emcc is not on the current shell PATH.",
+      "The production build emits third-party web-tree-sitter externalization/eval and large-chunk warnings; no build or browser errors occur."
+    ]
+  }
+}

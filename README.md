@@ -1,195 +1,48 @@
-Welcome to your new TanStack Start app!
+# Web IDE
 
-# Getting Started
+This repository is the S0 runtime baseline for a browser-based IDE built with TanStack Start. It currently validates the production compatibility of:
 
-To run this application:
+- TanStack Start with a client-only `/ide` route
+- Monaco editor/model/provider lifecycle and editor Worker loading
+- `web-tree-sitter` Worker initialization and restart
+- a pinned, self-built SQL grammar WASM and SQL parsing
+- a minimal Monaco Language Client WebSocket / JSON-RPC connection to a disposable mock server
 
-```bash
-vp install
-vp dev
-```
+S0 is intentionally a compatibility spike. It does not yet contain the Workspace, language registry, incremental syntax engine, SQL Language Server, or other M1+ architecture.
 
-# Building For Production
-
-To build this application for production:
-
-```bash
-vp build
-```
-
-## Styling
-
-This project uses [Tailwind CSS](https://tailwindcss.com/) for styling.
-
-### Removing Tailwind CSS
-
-If you prefer not to use Tailwind CSS:
-
-1. Remove the demo pages in `src/routes/demo/`
-2. Replace the Tailwind import in `src/styles.css` with your own styles
-3. Remove `tailwindcss()` from the plugins array in `vite.config.ts`
-4. Remove `@tailwindcss/vite` and `tailwindcss` from `package.json`
-
-# Paraglide i18n
-
-This add-on wires up ParaglideJS for localized routing and message formatting.
-
-- Messages live in `project.inlang/messages`.
-- URLs are localized through the Paraglide Vite plugin and router `rewrite` hooks.
-- Run the dev server or build to regenerate the `src/paraglide` outputs.
-
-## Shadcn
-
-Add components using the latest version of [Shadcn](https://ui.shadcn.com/).
+## Quick start
 
 ```bash
-vp dlx shadcn@latest add button
+pnpm install --frozen-lockfile
+pnpm dev
 ```
 
-## Routing
+Open <http://localhost:3000/ide> to inspect the probes.
 
-This project uses [TanStack Router](https://tanstack.com/router) with file-based routing. Routes are managed as files in `src/routes`.
+## Verification
 
-### Adding A Route
+Run the complete production gate with one command:
 
-To add a new route to your application just add a new file in the `./src/routes` directory.
-
-TanStack will automatically generate the content of the route file for you.
-
-Now that you have two routes you can use a `Link` component to navigate between them.
-
-### Adding Links
-
-To use SPA (Single Page Application) navigation you will need to import the `Link` component from `@tanstack/react-router`.
-
-```tsx
-import { Link } from "@tanstack/react-router";
+```bash
+pnpm verify:s0
 ```
 
-Then anywhere in your JSX you can use it like so:
+The gate runs the frozen install, TypeScript typecheck, formatting/lint checks, production build, production preview, and five Playwright tests. The tests cover Monaco remount/dispose, Tree-sitter Worker init/terminate/restart, SQL grammar load, SQL parse, LSP initialize/request/disconnect/reconnect/dispose, and assert zero browser console errors and zero uncaught page errors.
 
-```tsx
-<Link to="/about">About</Link>
+Individual commands:
+
+```bash
+pnpm typecheck
+pnpm check
+pnpm test
+pnpm build
+pnpm preview
 ```
 
-This will create a link that will navigate to the `/about` route.
+The LSP test starts its own disposable mock server. The SQL grammar artifact is produced from the pinned revision in `scripts/sql-grammar.lock.json`; rebuilding it requires the locked Tree-sitter CLI and Emscripten versions.
 
-More information on the `Link` component can be found in the [Link documentation](https://tanstack.com/router/v1/docs/framework/react/api/router/linkComponent).
+## Runtime freeze
 
-### Using A Layout
+The verified versions, SQL grammar revision/ABI/SHA-256, LSP dependencies, commands, and gate results are recorded in [runtime-lock.json](runtime-lock.json) and [ADR-001-runtime-stack.md](docs/adr/ADR-001-runtime-stack.md).
 
-In the File Based Routing setup the layout is located in `src/routes/__root.tsx`. Anything you add to the root route will appear in all the routes. The route content will appear in the JSX where you render `{children}` in the `shellComponent`.
-
-Here is an example layout that includes a header:
-
-```tsx
-import { HeadContent, Scripts, createRootRoute } from "@tanstack/react-router";
-
-export const Route = createRootRoute({
-  head: () => ({
-    meta: [
-      { charSet: "utf-8" },
-      { name: "viewport", content: "width=device-width, initial-scale=1" },
-      { title: "My App" },
-    ],
-  }),
-  shellComponent: ({ children }) => (
-    <html lang="en">
-      <head>
-        <HeadContent />
-      </head>
-      <body>
-        <header>
-          <nav>
-            <Link to="/">Home</Link>
-            <Link to="/about">About</Link>
-          </nav>
-        </header>
-        {children}
-        <Scripts />
-      </body>
-    </html>
-  ),
-});
-```
-
-More information on layouts can be found in the [Layouts documentation](https://tanstack.com/router/latest/docs/framework/react/guide/routing-concepts#layouts).
-
-## Server Functions
-
-TanStack Start provides server functions that allow you to write server-side code that seamlessly integrates with your client components.
-
-```tsx
-import { createServerFn } from "@tanstack/react-start";
-
-const getServerTime = createServerFn({
-  method: "GET",
-}).handler(async () => {
-  return new Date().toISOString();
-});
-
-// Use in a component
-function MyComponent() {
-  const [time, setTime] = useState("");
-
-  useEffect(() => {
-    getServerTime().then(setTime);
-  }, []);
-
-  return <div>Server time: {time}</div>;
-}
-```
-
-## API Routes
-
-You can create API routes by using the `server` property in your route definitions:
-
-```tsx
-import { createFileRoute } from "@tanstack/react-router";
-import { json } from "@tanstack/react-start";
-
-export const Route = createFileRoute("/api/hello")({
-  server: {
-    handlers: {
-      GET: () => json({ message: "Hello, World!" }),
-    },
-  },
-});
-```
-
-## Data Fetching
-
-There are multiple ways to fetch data in your application. You can use TanStack Query to fetch data from a server. But you can also use the `loader` functionality built into TanStack Router to load the data for a route before it's rendered.
-
-For example:
-
-```tsx
-import { createFileRoute } from "@tanstack/react-router";
-
-export const Route = createFileRoute("/people")({
-  loader: async () => {
-    const response = await fetch("https://swapi.dev/api/people");
-    return response.json();
-  },
-  component: PeopleComponent,
-});
-
-function PeopleComponent() {
-  const data = Route.useLoaderData();
-  return (
-    <ul>
-      {data.results.map((person) => (
-        <li key={person.name}>{person.name}</li>
-      ))}
-    </ul>
-  );
-}
-```
-
-Loaders simplify your data fetching logic dramatically. Check out more information in the [Loader documentation](https://tanstack.com/router/latest/docs/framework/react/guide/data-loading#loader-parameters).
-
-# Learn More
-
-You can learn more about all of the offerings from TanStack in the [TanStack documentation](https://tanstack.com).
-
-For TanStack Start specific documentation, visit [TanStack Start](https://tanstack.com/start).
+The project follows the implementation plan in [docs/TanStack_Start_Monaco_Tree-sitter_LSP_Web_IDE_实施方案_V2.md](docs/TanStack_Start_Monaco_Tree-sitter_LSP_Web_IDE_实施方案_V2.md). S0 must remain passing before work begins on M1.
