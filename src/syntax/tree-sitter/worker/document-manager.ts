@@ -1,6 +1,12 @@
 import type { Range, Tree } from "web-tree-sitter";
 
-import type { ApplyChanges, ParseResult, TextPosition, TextRange } from "../protocol";
+import type {
+  ApplyChanges,
+  ParseResult,
+  ReplaceDocument,
+  TextPosition,
+  TextRange,
+} from "../protocol";
 import { encodeEditTransaction, EditCodecError } from "../edit-codec";
 import type { OpenDocumentInput, DocumentSession } from "./document-session";
 import { WorkerRuntime } from "./runtime";
@@ -11,6 +17,7 @@ export type DocumentManagerErrorCode =
   | "DOCUMENT_ALREADY_OPEN"
   | "SESSION_ALREADY_OPEN"
   | "SESSION_NOT_FOUND"
+  | "VERSION_MISMATCH"
   | "PARSE_FAILED"
   | "RESYNC_REQUIRED";
 
@@ -188,6 +195,75 @@ export class DocumentManager {
     }
   }
 
+  async replaceDocument(request: ReplaceDocument): Promise<ParseResult> {
+    const session = this.sessionsById.get(request.sessionId);
+    if (session === undefined || session.documentUri !== request.documentUri) {
+      throw new DocumentManagerError(
+        "SESSION_NOT_FOUND",
+        `Session "${request.sessionId}" does not own document "${request.documentUri}".`,
+      );
+    }
+    if (request.documentVersion < session.documentVersion) {
+      throw new DocumentManagerError(
+        "VERSION_MISMATCH",
+        `Document version ${request.documentVersion} is older than session version ${session.documentVersion}.`,
+      );
+    }
+
+    const languageRuntime = await this.runtime.loadLanguage(session.languageId);
+    const parser = await languageRuntime.getParser();
+    if (
+      this.sessionsById.get(request.sessionId) !== session ||
+      request.documentVersion < session.documentVersion
+    ) {
+      throw new DocumentManagerError(
+        "VERSION_MISMATCH",
+        `Session "${request.sessionId}" changed before full resync completed.`,
+      );
+    }
+
+    const parseStartedAt = globalThis.performance.now();
+    let newTree: Tree | null = null;
+    try {
+      newTree = parser.parse(request.text);
+      const parseTimeMs = globalThis.performance.now() - parseStartedAt;
+      if (newTree === null) {
+        throw new Error("parser returned no tree");
+      }
+      const hasErrors = newTree.rootNode.hasError;
+
+      if (session.state === "ready") {
+        session.tree.delete();
+      }
+      session.tree = newTree;
+      newTree = null;
+      session.textMirror = request.text;
+      session.documentVersion = request.documentVersion;
+      session.state = "ready";
+
+      return {
+        type: "ParseResult",
+        protocolVersion: request.protocolVersion,
+        workerGeneration: request.workerGeneration,
+        requestId: request.requestId,
+        sessionId: session.sessionId,
+        documentUri: session.documentUri,
+        documentVersion: session.documentVersion,
+        parseTimeMs,
+        hasErrors,
+        changedRanges: [fullTextRange(request.text)],
+      };
+    } catch (error: unknown) {
+      if (newTree !== null) {
+        safelyDelete(newTree);
+      }
+      throw new DocumentManagerError(
+        "PARSE_FAILED",
+        `Full parse failed for "${session.documentUri}": ${errorMessage(error)}`,
+      );
+    }
+  }
+
   getSession(sessionId: string): DocumentSession | undefined {
     return this.sessionsById.get(sessionId);
   }
@@ -332,6 +408,22 @@ function treeSitterRangeToTextRange(text: string, range: Range): TextRange {
   return {
     start: treeSitterPositionToTextPosition(text, range.startPosition),
     end: treeSitterPositionToTextPosition(text, range.endPosition),
+  };
+}
+
+function fullTextRange(text: string): TextRange {
+  let line = 0;
+  let lineStart = 0;
+  for (let index = 0; index < text.length; index += 1) {
+    if (text.charCodeAt(index) === 0x0a) {
+      line += 1;
+      lineStart = index + 1;
+    }
+  }
+
+  return {
+    start: { line: 0, character: 0 },
+    end: { line, character: text.length - lineStart },
   };
 }
 

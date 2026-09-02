@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vite-plus/test";
 
 import { sqlLanguageDefinition } from "../../../src/languages/sql/definition";
-import type { ApplyChanges } from "../../../src/syntax/tree-sitter/protocol";
+import type { ApplyChanges, ReplaceDocument } from "../../../src/syntax/tree-sitter/protocol";
 import type { OpenDocumentInput } from "../../../src/syntax/tree-sitter/worker/document-session";
 import {
   DocumentManager,
@@ -84,6 +84,20 @@ function applyInput(overrides: Partial<ApplyChanges> = {}): ApplyChanges {
     baseVersion: 1,
     nextVersion: 7,
     changes: [{ rangeOffset: 7, rangeLength: 1, text: "2" }],
+    ...overrides,
+  };
+}
+
+function replaceInput(overrides: Partial<ReplaceDocument> = {}): ReplaceDocument {
+  return {
+    type: "ReplaceDocument" as const,
+    protocolVersion: 1 as const,
+    workerGeneration: 4,
+    requestId: 10,
+    sessionId: "session-1",
+    documentUri: "file:///workspace/query.sql",
+    documentVersion: 7,
+    text: "SELECT 2;",
     ...overrides,
   };
 }
@@ -281,6 +295,82 @@ describe("DocumentManager", () => {
       code: "RESYNC_REQUIRED",
     });
     expect(oldTree.editSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it("full-resyncs an edited or desynced session from an authoritative CRLF snapshot", async () => {
+    const { manager, parseSpy } = createManager();
+    const oldTree = createTree();
+    const replacementTree = createTree();
+    parseSpy
+      .mockReturnValueOnce(oldTree.value)
+      .mockReturnValueOnce(null)
+      .mockReturnValueOnce(replacementTree.value);
+    const session = await manager.openDocument(openInput());
+
+    await expect(manager.applyChanges(applyInput())).rejects.toMatchObject({
+      code: "RESYNC_REQUIRED",
+    });
+    const result = await manager.replaceDocument(
+      replaceInput({
+        documentVersion: 42,
+        text: "SELECT 2;\r\nWHERE id = 1;",
+      }),
+    );
+
+    expect(parseSpy).toHaveBeenLastCalledWith("SELECT 2;\r\nWHERE id = 1;");
+    expect(oldTree.deleteSpy).toHaveBeenCalledTimes(1);
+    expect(session.tree).toBe(replacementTree.value);
+    expect(session.textMirror).toBe("SELECT 2;\r\nWHERE id = 1;");
+    expect(session.documentVersion).toBe(42);
+    expect(session.state).toBe("ready");
+    expect(result).toMatchObject({
+      type: "ParseResult",
+      requestId: 10,
+      documentVersion: 42,
+      changedRanges: [
+        {
+          start: { line: 0, character: 0 },
+          end: { line: 1, character: 13 },
+        },
+      ],
+    });
+  });
+
+  it("rejects stale full snapshots without changing the session", async () => {
+    const { manager, parseSpy } = createManager();
+    const oldTree = createTree();
+    parseSpy.mockReturnValue(oldTree.value);
+    const session = await manager.openDocument(openInput());
+
+    await expect(
+      manager.replaceDocument(replaceInput({ documentVersion: 0, text: "stale" })),
+    ).rejects.toMatchObject({ code: "VERSION_MISMATCH" });
+
+    expect(parseSpy).toHaveBeenCalledTimes(1);
+    expect(session.tree).toBe(oldTree.value);
+    expect(session.textMirror).toBe("SELECT 1;");
+    expect(session.documentVersion).toBe(1);
+    expect(session.state).toBe("ready");
+    expect(oldTree.deleteSpy).not.toHaveBeenCalled();
+  });
+
+  it("keeps the current state when full parsing fails", async () => {
+    const { manager, parseSpy } = createManager();
+    const oldTree = createTree();
+    parseSpy.mockReturnValueOnce(oldTree.value).mockImplementationOnce(() => {
+      throw new Error("full parser failure");
+    });
+    const session = await manager.openDocument(openInput());
+
+    await expect(
+      manager.replaceDocument(replaceInput({ documentVersion: 8, text: "invalid snapshot" })),
+    ).rejects.toMatchObject({ code: "PARSE_FAILED" });
+
+    expect(session.tree).toBe(oldTree.value);
+    expect(session.textMirror).toBe("SELECT 1;");
+    expect(session.documentVersion).toBe(1);
+    expect(session.state).toBe("ready");
+    expect(oldTree.deleteSpy).not.toHaveBeenCalled();
   });
 
   it("rejects unknown languages before loading a grammar", async () => {
