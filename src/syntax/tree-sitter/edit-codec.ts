@@ -41,22 +41,9 @@ function isSurrogateSplit(text: string, offset: number): boolean {
   return previous >= 0xd800 && previous <= 0xdbff && next >= 0xdc00 && next <= 0xdfff;
 }
 
-interface TextMetrics {
-  byteOffsets: Uint32Array;
-  lineStarts: number[];
-}
-
-function utf8ByteLength(text: string): number {
-  let byteLength = 0;
-  for (let index = 0; index < text.length;) {
-    const codePoint = text.codePointAt(index);
-    if (codePoint === undefined) {
-      invalid("Text contains an invalid code point.");
-    }
-    byteLength += utf8BytesForCodePoint(codePoint);
-    index += codePoint > 0xffff ? 2 : 1;
-  }
-  return byteLength;
+interface BoundaryMetric {
+  byteIndex: number;
+  position: TreeSitterPoint;
 }
 
 function utf8BytesForCodePoint(codePoint: number): number {
@@ -72,51 +59,61 @@ function utf8BytesForCodePoint(codePoint: number): number {
   return 4;
 }
 
-function createTextMetrics(text: string): TextMetrics {
-  const byteOffsets = new Uint32Array(text.length + 1);
-  const lineStarts = [0];
-  let byteOffset = 0;
+function measureBoundaries(text: string, offsets: readonly number[]): Map<number, BoundaryMetric> {
+  const boundaries = [...new Set(offsets)].sort((left, right) => left - right);
+  const metrics = new Map<number, BoundaryMetric>();
+  let boundaryIndex = 0;
+  let offset = 0;
+  let byteIndex = 0;
+  let row = 0;
+  let column = 0;
 
-  for (let index = 0; index < text.length;) {
-    const codePoint = text.codePointAt(index);
-    if (codePoint === undefined) {
-      invalid("Text contains an invalid code point.");
+  while (boundaryIndex < boundaries.length) {
+    const boundary = boundaries[boundaryIndex];
+    while (offset < boundary) {
+      const codePoint = text.codePointAt(offset);
+      if (codePoint === undefined) {
+        invalid("Text contains an invalid code point.");
+      }
+
+      const codeUnitLength = codePoint > 0xffff ? 2 : 1;
+      if (offset + codeUnitLength > boundary) {
+        invalid("A text change boundary splits a code point.");
+      }
+
+      const byteLength = utf8BytesForCodePoint(codePoint);
+      byteIndex += byteLength;
+      if (codePoint === 0x0a) {
+        row += 1;
+        column = 0;
+      } else {
+        column += byteLength;
+      }
+      offset += codeUnitLength;
     }
 
-    const codeUnitLength = codePoint > 0xffff ? 2 : 1;
-    byteOffset += utf8BytesForCodePoint(codePoint);
-    for (let codeUnit = 1; codeUnit <= codeUnitLength; codeUnit += 1) {
-      byteOffsets[index + codeUnit] = byteOffset;
+    if (offset !== boundary) {
+      invalid("A text change boundary is outside the UTF-16 text boundaries.");
     }
-    if (codePoint === 0x0a) {
-      lineStarts.push(index + codeUnitLength);
+
+    metrics.set(boundary, { byteIndex, position: { row, column } });
+    while (boundaries[boundaryIndex] === boundary) {
+      boundaryIndex += 1;
     }
-    index += codeUnitLength;
   }
 
-  return { byteOffsets, lineStarts };
+  return metrics;
 }
 
-function pointAtOffset(metrics: TextMetrics, offset: number): TreeSitterPoint {
-  let low = 0;
-  let high = metrics.lineStarts.length;
-  while (low < high) {
-    const middle = Math.floor((low + high) / 2);
-    if ((metrics.lineStarts[middle] ?? 0) <= offset) {
-      low = middle + 1;
-    } else {
-      high = middle;
-    }
-  }
-
-  const row = Math.max(0, low - 1);
-  const lineStart = metrics.lineStarts[row] ?? 0;
-  return { row, column: metrics.byteOffsets[offset] - metrics.byteOffsets[lineStart] };
+interface ReplacementMetrics {
+  byteLength: number;
+  endPosition: TreeSitterPoint;
 }
 
-function pointAfterText(start: TreeSitterPoint, text: string): TreeSitterPoint {
+function measureReplacement(start: TreeSitterPoint, text: string): ReplacementMetrics {
   let row = start.row;
   let column = start.column;
+  let byteLength = 0;
 
   for (let index = 0; index < text.length;) {
     const codePoint = text.codePointAt(index);
@@ -125,16 +122,18 @@ function pointAfterText(start: TreeSitterPoint, text: string): TreeSitterPoint {
     }
 
     const codeUnitLength = codePoint > 0xffff ? 2 : 1;
+    const currentByteLength = utf8BytesForCodePoint(codePoint);
+    byteLength += currentByteLength;
     if (codePoint === 0x0a) {
       row += 1;
       column = 0;
     } else {
-      column += utf8BytesForCodePoint(codePoint);
+      column += currentByteLength;
     }
     index += codeUnitLength;
   }
 
-  return { row, column };
+  return { byteLength, endPosition: { row, column } };
 }
 
 function validateChanges(text: string, changes: readonly TextChange[]): TextChange[] {
@@ -189,25 +188,31 @@ export function encodeEditTransaction(
 
   let stagedText = text;
   const inputEdits: InputEdit[] = [];
-  const metrics = createTextMetrics(text);
+  const metrics = measureBoundaries(
+    text,
+    sortedChanges.flatMap((change) => [
+      change.rangeOffset,
+      change.rangeOffset + change.rangeLength,
+    ]),
+  );
 
   for (const change of sortedChanges) {
     const startOffset = change.rangeOffset;
     const endOffset = startOffset + change.rangeLength;
-    const startPosition = pointAtOffset(metrics, startOffset);
-    const oldEndPosition = pointAtOffset(metrics, endOffset);
-    const newEndPosition = pointAfterText(startPosition, change.text);
-    const startIndex = metrics.byteOffsets[startOffset] ?? 0;
-    const oldEndIndex = metrics.byteOffsets[endOffset] ?? startIndex;
-    const newEndIndex = startIndex + utf8ByteLength(change.text);
+    const startMetric = metrics.get(startOffset);
+    const oldEndMetric = metrics.get(endOffset);
+    if (startMetric === undefined || oldEndMetric === undefined) {
+      invalid("A text change boundary could not be measured.");
+    }
+    const replacement = measureReplacement(startMetric.position, change.text);
 
     inputEdits.push({
-      startPosition,
-      oldEndPosition,
-      newEndPosition,
-      startIndex,
-      oldEndIndex,
-      newEndIndex,
+      startPosition: startMetric.position,
+      oldEndPosition: oldEndMetric.position,
+      newEndPosition: replacement.endPosition,
+      startIndex: startMetric.byteIndex,
+      oldEndIndex: oldEndMetric.byteIndex,
+      newEndIndex: startMetric.byteIndex + replacement.byteLength,
     });
     stagedText = `${stagedText.slice(0, startOffset)}${change.text}${stagedText.slice(endOffset)}`;
   }

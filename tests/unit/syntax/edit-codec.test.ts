@@ -5,6 +5,128 @@ import {
   encodeEditTransaction,
   EditCodecError,
 } from "../../../src/syntax/tree-sitter/edit-codec";
+import type { InputEdit, TreeSitterPoint } from "../../../src/syntax/tree-sitter/edit-codec";
+
+interface ReferenceTextMetrics {
+  byteOffsets: Uint32Array;
+  lineStarts: number[];
+}
+
+function referenceUtf8BytesForCodePoint(codePoint: number): number {
+  if (codePoint <= 0x7f) return 1;
+  if (codePoint <= 0x7ff) return 2;
+  if (codePoint <= 0xffff) return 3;
+  return 4;
+}
+
+function referenceCreateTextMetrics(text: string): ReferenceTextMetrics {
+  const byteOffsets = new Uint32Array(text.length + 1);
+  const lineStarts = [0];
+  let byteOffset = 0;
+  for (let index = 0; index < text.length;) {
+    const codePoint = text.codePointAt(index);
+    if (codePoint === undefined) {
+      throw new Error("Reference replacement contains an invalid code point.");
+    }
+    const codeUnitLength = codePoint > 0xffff ? 2 : 1;
+    byteOffset += referenceUtf8BytesForCodePoint(codePoint);
+    for (let codeUnit = 1; codeUnit <= codeUnitLength; codeUnit += 1) {
+      byteOffsets[index + codeUnit] = byteOffset;
+    }
+    if (codePoint === 0x0a) lineStarts.push(index + codeUnitLength);
+    index += codeUnitLength;
+  }
+  return { byteOffsets, lineStarts };
+}
+
+function referencePointAtOffset(metrics: ReferenceTextMetrics, offset: number): TreeSitterPoint {
+  let low = 0;
+  let high = metrics.lineStarts.length;
+  while (low < high) {
+    const middle = Math.floor((low + high) / 2);
+    if ((metrics.lineStarts[middle] ?? 0) <= offset) {
+      low = middle + 1;
+    } else {
+      high = middle;
+    }
+  }
+
+  const row = Math.max(0, low - 1);
+  const lineStart = metrics.lineStarts[row] ?? 0;
+  return { row, column: metrics.byteOffsets[offset] - metrics.byteOffsets[lineStart] };
+}
+
+function referencePointAfterText(start: TreeSitterPoint, text: string): TreeSitterPoint {
+  let row = start.row;
+  let column = start.column;
+
+  for (let index = 0; index < text.length;) {
+    const codePoint = text.codePointAt(index);
+    if (codePoint === undefined) {
+      throw new Error("Reference replacement contains an invalid code point.");
+    }
+    const codeUnitLength = codePoint > 0xffff ? 2 : 1;
+    const byteLength = referenceUtf8BytesForCodePoint(codePoint);
+    if (codePoint === 0x0a) {
+      row += 1;
+      column = 0;
+    } else {
+      column += byteLength;
+    }
+    index += codeUnitLength;
+  }
+
+  return { row, column };
+}
+
+function referenceUtf8ByteLength(text: string): number {
+  let byteLength = 0;
+  for (let index = 0; index < text.length;) {
+    const codePoint = text.codePointAt(index);
+    if (codePoint === undefined) {
+      throw new Error("Reference text contains an invalid code point.");
+    }
+    byteLength += referenceUtf8BytesForCodePoint(codePoint);
+    index += codePoint > 0xffff ? 2 : 1;
+  }
+  return byteLength;
+}
+
+function referenceEncodeEditTransaction(
+  text: string,
+  changes: readonly { rangeOffset: number; rangeLength: number; text: string }[],
+): { stagedText: string; inputEdits: InputEdit[] } {
+  const sortedChanges = [...changes].sort((left, right) => right.rangeOffset - left.rangeOffset);
+  let stagedText = text;
+  const inputEdits: InputEdit[] = [];
+  const metrics = referenceCreateTextMetrics(text);
+
+  for (const change of sortedChanges) {
+    const startOffset = change.rangeOffset;
+    const endOffset = startOffset + change.rangeLength;
+    const startPosition = referencePointAtOffset(metrics, startOffset);
+    const oldEndPosition = referencePointAtOffset(metrics, endOffset);
+    const newEndPosition = referencePointAfterText(startPosition, change.text);
+    const startIndex = referenceUtf8ByteLength(text.slice(0, startOffset));
+    const oldEndIndex = referenceUtf8ByteLength(text.slice(0, endOffset));
+
+    inputEdits.push({
+      startPosition,
+      oldEndPosition,
+      newEndPosition,
+      startIndex,
+      oldEndIndex,
+      newEndIndex: startIndex + referenceUtf8ByteLength(change.text),
+    });
+    stagedText = `${stagedText.slice(0, startOffset)}${change.text}${stagedText.slice(endOffset)}`;
+  }
+
+  return { stagedText, inputEdits };
+}
+
+function largeAsciiSource(): string {
+  return `a${"x".repeat(1024 * 1024 - 2)}z`;
+}
 
 describe("EditCodec", () => {
   it.each([
@@ -104,6 +226,60 @@ describe("EditCodec", () => {
       oldEndIndex: 8,
       newEndIndex: 8,
     });
+  });
+
+  it.each([
+    {
+      name: "ASCII start insert",
+      source: "abcdef",
+      changes: [{ rangeOffset: 0, rangeLength: 0, text: "X" }],
+    },
+    {
+      name: "ASCII middle replace",
+      source: "abcdef",
+      changes: [{ rangeOffset: 2, rangeLength: 2, text: "XY" }],
+    },
+    {
+      name: "ASCII end delete",
+      source: "abcdef",
+      changes: [{ rangeOffset: 5, rangeLength: 1, text: "" }],
+    },
+    {
+      name: "CJK and emoji replacement",
+      source: "前😀中后",
+      changes: [{ rangeOffset: 1, rangeLength: 3, text: "世界🚀" }],
+    },
+    {
+      name: "CRLF multiline replacement",
+      source: "one\r\ntwo\r\nthree",
+      changes: [{ rangeOffset: 3, rangeLength: 5, text: "一\n二\r\n" }],
+    },
+    {
+      name: "batch with shared boundaries",
+      source: "abc😀\n中文",
+      changes: [
+        { rangeOffset: 0, rangeLength: 1, text: "A" },
+        { rangeOffset: 1, rangeLength: 2, text: "🚀" },
+        { rangeOffset: 3, rangeLength: 2, text: "" },
+      ],
+    },
+  ])("matches the dense reference for $name", ({ source, changes }) => {
+    expect(encodeEditTransaction(source, changes)).toEqual(
+      referenceEncodeEditTransaction(source, changes),
+    );
+  });
+
+  it.each([
+    { name: "start", offset: 0 },
+    { name: "middle", offset: Math.floor((1024 * 1024) / 2) },
+    { name: "end", offset: 1024 * 1024 - 1 },
+  ])("matches the dense reference for a 1MB $name edit", ({ offset }) => {
+    const source = largeAsciiSource();
+    const changes = [{ rangeOffset: offset, rangeLength: 1, text: "q" }];
+
+    expect(encodeEditTransaction(source, changes)).toEqual(
+      referenceEncodeEditTransaction(source, changes),
+    );
   });
 
   it("rejects out-of-bounds, overlapping, and surrogate-splitting changes", () => {
