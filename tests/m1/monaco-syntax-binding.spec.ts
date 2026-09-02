@@ -38,3 +38,17 @@ test("binds a real Monaco model to the syntax worker", async ({ page }) => {
   expect(consoleErrors, "console.error messages").toEqual([]);
   expect(pageErrors, "uncaught page errors").toEqual([]);
 });
+
+test("inspects the current SQL AST on demand", async ({ page }) => {
+  await page.goto(`${baseUrl}/ide`);
+
+  const state = page.locator('[data-testid="m1-monaco-syntax-state"]');
+  const inspectButton = page.locator('[data-testid="m1-ast-inspect"]');
+  const result = page.locator('[data-testid="m1-ast-inspect-result"]');
+
+  await expect(state).toHaveText("ready", { timeout: 30_000 });
+  await expect(result).toHaveText("No AST inspection requested.");
+  await inspectButton.click();
+  await expect(result).toContainText('"type": "InspectResult"', { timeout: 30_000 });
+  await expect(result).toContainText('"type": "program"');
+});

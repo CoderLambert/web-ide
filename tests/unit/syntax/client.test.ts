@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vite-plus/test";
 
 import {
   PROTOCOL_VERSION,
+  type InspectResult,
   type ParseResult,
   type WorkerError,
 } from "../../../src/syntax/tree-sitter/protocol";
@@ -80,6 +81,19 @@ const result = (
   changedRanges: [],
 });
 
+const inspection = (workerGeneration: number, documentVersion: number): InspectResult => ({
+  type: "InspectResult",
+  protocolVersion: PROTOCOL_VERSION,
+  workerGeneration,
+  requestId: 1,
+  sessionId: "session-1",
+  documentUri: "opaque-document-id",
+  documentVersion,
+  root: null,
+  nodeCount: 0,
+  truncated: true,
+});
+
 describe("TreeSitterClient", () => {
   it("allocates request ids and sends the current worker generation", async () => {
     const worker = new FakeWorker();
@@ -127,6 +141,29 @@ describe("TreeSitterClient", () => {
         documentVersion: 1,
       },
     ]);
+    expect(client.pendingCount).toBe(0);
+  });
+
+  it("resolves InspectDocument with the matching expected version", async () => {
+    const worker = new FakeWorker();
+    const client = new TreeSitterClient(worker, 4);
+    const pending = client.request({
+      type: "InspectDocument",
+      sessionId: "session-1",
+      documentUri: "opaque-document-id",
+      expectedVersion: 8,
+      maxDepth: 4,
+      maxNodes: 25,
+    });
+
+    worker.emitMessage({ ...inspection(4, 7), requestId: 1 });
+    expect(client.pendingCount).toBe(1);
+    worker.emitMessage({ ...inspection(4, 8), requestId: 1 });
+
+    await expect(pending).resolves.toMatchObject({
+      type: "InspectResult",
+      documentVersion: 8,
+    });
     expect(client.pendingCount).toBe(0);
   });
 

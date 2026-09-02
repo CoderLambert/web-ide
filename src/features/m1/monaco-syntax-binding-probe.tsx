@@ -53,16 +53,18 @@ interface ProbeStatus {
 
 function SyntaxBindingProbe() {
   const hostRef = useRef<HTMLDivElement>(null);
+  const resourcesRef = useRef<ProbeResources>({});
   const [status, setStatus] = useState<ProbeStatus>({
     state: "loading",
     documentVersion: undefined,
     parseTimeMs: undefined,
     hasErrors: undefined,
   });
+  const [inspectionText, setInspectionText] = useState("No AST inspection requested.");
 
   useEffect(() => {
     const host = hostRef.current;
-    const resources: ProbeResources = {};
+    const resources = resourcesRef.current;
     let cancelled = false;
 
     if (!host) {
@@ -162,6 +164,37 @@ function SyntaxBindingProbe() {
     };
   }, []);
 
+  const inspectCurrentDocument = (): void => {
+    const binding = resourcesRef.current.binding;
+    const client = resourcesRef.current.client;
+    if (binding === undefined || client === undefined || binding.state === "closed") {
+      setInspectionText("Syntax binding is not ready.");
+      return;
+    }
+
+    const snapshot = binding.openDocumentSnapshot;
+    setInspectionText("Inspecting…");
+    void client
+      .request({
+        type: "InspectDocument",
+        sessionId: snapshot.sessionId,
+        documentUri: snapshot.documentUri,
+        expectedVersion: snapshot.documentVersion,
+        maxDepth: 4,
+        maxNodes: 100,
+      })
+      .then((response) => {
+        if (response.type !== "InspectResult") {
+          throw new Error(`Unexpected ${response.type} response from AST Inspector.`);
+        }
+        setInspectionText(JSON.stringify(response, null, 2));
+      })
+      .catch((error: unknown) => {
+        console.error("M1 AST Inspector error", error);
+        setInspectionText("AST inspection failed.");
+      });
+  };
+
   return (
     <main
       data-document-version={status.documentVersion ?? ""}
@@ -183,6 +216,12 @@ function SyntaxBindingProbe() {
         ref={hostRef}
         style={{ border: "1px solid currentColor", height: 320, width: "100%" }}
       />
+      <button data-testid="m1-ast-inspect" onClick={inspectCurrentDocument} type="button">
+        Inspect AST
+      </button>
+      <pre data-testid="m1-ast-inspect-result" style={{ overflow: "auto", maxHeight: 240 }}>
+        {inspectionText}
+      </pre>
     </main>
   );
 }

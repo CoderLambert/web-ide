@@ -5,6 +5,7 @@ import {
   type ApplyChanges,
   type CloseDocument,
   type InspectDocument,
+  type InspectResult,
   type OpenDocument,
   type ParseResult,
   type ReplaceDocument,
@@ -80,6 +81,9 @@ function isWorkerRequest(message: WorkerRequest | WorkerResponse): message is Wo
 function documentVersionForRequest(request: TreeSitterClientRequest): number | undefined {
   if ("documentVersion" in request) {
     return request.documentVersion;
+  }
+  if ("expectedVersion" in request) {
+    return request.expectedVersion;
   }
   return request.type === "ApplyChanges" ? request.nextVersion : undefined;
 }
@@ -214,7 +218,11 @@ export class TreeSitterClient {
       if (decoded.type === "WorkerReady") {
         return;
       }
-      if (decoded.type !== "ParseResult" && decoded.type !== "WorkerError") {
+      if (
+        decoded.type !== "ParseResult" &&
+        decoded.type !== "InspectResult" &&
+        decoded.type !== "WorkerError"
+      ) {
         return;
       }
       response = decoded;
@@ -242,7 +250,10 @@ export class TreeSitterClient {
     pending.resolve(response);
   }
 
-  private matchesPending(response: ParseResult | WorkerError, pending: PendingRequest): boolean {
+  private matchesPending(
+    response: ParseResult | InspectResult | WorkerError,
+    pending: PendingRequest,
+  ): boolean {
     if (
       response.workerGeneration !== pending.workerGeneration ||
       response.requestId !== pending.requestId
@@ -250,7 +261,7 @@ export class TreeSitterClient {
       return false;
     }
 
-    if (response.type === "ParseResult") {
+    if (response.type === "ParseResult" || response.type === "InspectResult") {
       return (
         response.sessionId === pending.sessionId &&
         response.documentUri === pending.documentUri &&

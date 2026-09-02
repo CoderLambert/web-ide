@@ -90,7 +90,11 @@ class FakeClient implements SyntaxDocumentClient {
 
 function parseResult(request: TreeSitterClientRequest): ParseResult {
   const documentVersion =
-    request.type === "ApplyChanges" ? request.nextVersion : request.documentVersion;
+    request.type === "ApplyChanges"
+      ? request.nextVersion
+      : request.type === "InspectDocument"
+        ? request.expectedVersion
+        : request.documentVersion;
   return {
     type: "ParseResult",
     protocolVersion: 1,

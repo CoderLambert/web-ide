@@ -1,6 +1,7 @@
 import { sqlLanguageDefinition } from "../../../languages/sql/definition";
-import type { ParseResult, WorkerRequest } from "../protocol";
-import { DocumentManager } from "./document-manager";
+import type { InspectDocument, InspectResult, ParseResult, WorkerRequest } from "../protocol";
+import { DocumentManager, DocumentManagerError } from "./document-manager";
+import { AstInspector } from "./inspector";
 import { WorkerRuntime } from "./runtime";
 import { installWorkerHost } from "./worker";
 
@@ -65,6 +66,7 @@ function startWorker(workerGeneration: number): void {
   const runtime = new WorkerRuntime();
   runtime.registerLanguage(sqlLanguageDefinition);
   const documents = new DocumentManager(runtime);
+  const inspector = new AstInspector();
 
   installWorkerHost({
     workerGeneration,
@@ -87,11 +89,40 @@ function startWorker(workerGeneration: number): void {
         case "CloseDocument":
           documents.closeDocument(request.sessionId);
           return undefined;
-        case "InspectDocument":
-          throw new Error("InspectDocument is not available in M1-11.");
+        case "InspectDocument": {
+          const session = documents.getSession(request.sessionId);
+          if (session === undefined || session.documentUri !== request.documentUri) {
+            throw new DocumentManagerError(
+              "SESSION_NOT_FOUND",
+              `Session "${request.sessionId}" does not own document "${request.documentUri}".`,
+            );
+          }
+
+          const result = inspector.inspect(session, request);
+          return inspectResultForRequest(request, session.documentVersion, result);
+        }
       }
     },
   });
+}
+
+function inspectResultForRequest(
+  request: InspectDocument,
+  documentVersion: number,
+  result: ReturnType<AstInspector["inspect"]>,
+): InspectResult {
+  return {
+    type: "InspectResult",
+    protocolVersion: request.protocolVersion,
+    workerGeneration: request.workerGeneration,
+    requestId: request.requestId,
+    sessionId: request.sessionId,
+    documentUri: request.documentUri,
+    documentVersion,
+    root: result.root,
+    nodeCount: result.nodeCount,
+    truncated: result.truncated,
+  };
 }
 
 const bootstrapListener = (event: MessageEvent<unknown>): void => {

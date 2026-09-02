@@ -8,6 +8,7 @@ export const PROTOCOL_MESSAGE_TYPES = [
   "InspectDocument",
   "WorkerReady",
   "ParseResult",
+  "InspectResult",
   "WorkerError",
 ] as const;
 
@@ -89,8 +90,10 @@ export interface CloseDocument extends RequestMeta, VersionedDocumentMeta {
   type: "CloseDocument";
 }
 
-export interface InspectDocument extends RequestMeta, VersionedDocumentMeta {
+export interface InspectDocument extends RequestMeta, DocumentMeta {
   type: "InspectDocument";
+  /** The editor version the inspector must read without crossing. */
+  expectedVersion: number;
   maxDepth: number;
   maxNodes: number;
 }
@@ -107,6 +110,22 @@ export interface ParseResult extends RequestMeta, VersionedDocumentMeta {
   parseTimeMs: number;
   hasErrors: boolean;
   changedRanges: TextRange[];
+}
+
+export interface InspectNode {
+  type: string;
+  isNamed: boolean;
+  range: TextRange;
+  children: InspectNode[];
+  /** True when this node has children omitted by maxDepth or maxNodes. */
+  truncated: boolean;
+}
+
+export interface InspectResult extends RequestMeta, VersionedDocumentMeta {
+  type: "InspectResult";
+  root: InspectNode | null;
+  nodeCount: number;
+  truncated: boolean;
 }
 
 export interface WorkerError {
@@ -131,7 +150,7 @@ export type WorkerRequest =
   | CloseDocument
   | InspectDocument;
 
-export type WorkerResponse = WorkerReady | ParseResult | WorkerError;
+export type WorkerResponse = WorkerReady | ParseResult | InspectResult | WorkerError;
 
 export type ProtocolMessage = WorkerRequest | WorkerResponse;
 
@@ -410,7 +429,7 @@ const decodeInspectDocument = (record: MessageRecord, path: string): InspectDocu
       "requestId",
       "sessionId",
       "documentUri",
-      "documentVersion",
+      "expectedVersion",
       "maxDepth",
       "maxNodes",
     ],
@@ -420,7 +439,8 @@ const decodeInspectDocument = (record: MessageRecord, path: string): InspectDocu
   return {
     type: "InspectDocument",
     ...readRequestMeta(record, path),
-    ...readVersionedDocumentMeta(record, path),
+    ...readDocumentMeta(record, path),
+    expectedVersion: readNonNegativeIntegerField(record, "expectedVersion", path),
     maxDepth: readNonNegativeIntegerField(record, "maxDepth", path),
     maxNodes: readNonNegativeIntegerField(record, "maxNodes", path),
   };
@@ -463,6 +483,114 @@ const decodeParseResult = (record: MessageRecord, path: string): ParseResult => 
     changedRanges: readArrayField(record, "changedRanges", path).map((range, index) =>
       decodeTextRange(range, `${path}.changedRanges[${index}]`),
     ),
+  };
+};
+
+interface DecodedInspectNode {
+  node: InspectNode;
+  nodeCount: number;
+}
+
+const decodeInspectNode = (input: unknown, path: string): DecodedInspectNode => {
+  const rootRecord = expectRecord(input, path);
+  const rootNode: InspectNode = {
+    type: readStringField(rootRecord, "type", path),
+    isNamed: readBooleanField(rootRecord, "isNamed", path),
+    range: decodeTextRange(required(rootRecord, "range", path), `${path}.range`),
+    children: [],
+    truncated: readBooleanField(rootRecord, "truncated", path),
+  };
+  const rootChildren = readArrayField(rootRecord, "children", path);
+  expectKeys(rootRecord, ["type", "isNamed", "range", "children", "truncated"], path);
+
+  const stack: Array<{
+    node: InspectNode;
+    children: unknown[];
+    nextChild: number;
+    path: string;
+  }> = [
+    {
+      node: rootNode,
+      children: rootChildren,
+      nextChild: 0,
+      path,
+    },
+  ];
+  const seenRecords = new Set<MessageRecord>([rootRecord]);
+  let nodeCount = 1;
+
+  while (stack.length > 0) {
+    const frame = stack[stack.length - 1];
+    if (frame.nextChild >= frame.children.length) {
+      stack.pop();
+      continue;
+    }
+
+    const childIndex = frame.nextChild;
+    frame.nextChild += 1;
+    const childPath = `${frame.path}.children[${childIndex}]`;
+    const childRecord = expectRecord(frame.children[childIndex], childPath);
+    if (seenRecords.has(childRecord)) {
+      return invalid("InspectResult contains a repeated or cyclic node.", childPath);
+    }
+    seenRecords.add(childRecord);
+    const childNode: InspectNode = {
+      type: readStringField(childRecord, "type", childPath),
+      isNamed: readBooleanField(childRecord, "isNamed", childPath),
+      range: decodeTextRange(required(childRecord, "range", childPath), `${childPath}.range`),
+      children: [],
+      truncated: readBooleanField(childRecord, "truncated", childPath),
+    };
+    const childChildren = readArrayField(childRecord, "children", childPath);
+    expectKeys(childRecord, ["type", "isNamed", "range", "children", "truncated"], childPath);
+    frame.node.children.push(childNode);
+    stack.push({
+      node: childNode,
+      children: childChildren,
+      nextChild: 0,
+      path: childPath,
+    });
+    nodeCount += 1;
+  }
+
+  return { node: rootNode, nodeCount };
+};
+
+const decodeInspectResult = (record: MessageRecord, path: string): InspectResult => {
+  expectKeys(
+    record,
+    [
+      "type",
+      "protocolVersion",
+      "workerGeneration",
+      "requestId",
+      "sessionId",
+      "documentUri",
+      "documentVersion",
+      "root",
+      "nodeCount",
+      "truncated",
+    ],
+    path,
+  );
+
+  const root = required(record, "root", path);
+  const nodeCount = readNonNegativeIntegerField(record, "nodeCount", path);
+  const decodedRoot = root === null ? undefined : decodeInspectNode(root, `${path}.root`);
+  if (nodeCount !== (decodedRoot?.nodeCount ?? 0)) {
+    return invalid(
+      `InspectResult nodeCount ${nodeCount} does not match its serialized node count.`,
+      `${path}.nodeCount`,
+    );
+  }
+
+  return {
+    type: "InspectResult",
+    ...readRequestMeta(record, path),
+    ...readVersionedDocumentMeta(record, path),
+    root: decodedRoot?.node ?? null,
+    nodeCount,
+    truncated: readBooleanField(record, "truncated", path),
   };
 };
 
@@ -559,6 +687,8 @@ export function decodeWorkerMessage(input: unknown): ProtocolMessage {
       return decodeWorkerReady(record, "$message");
     case "ParseResult":
       return decodeParseResult(record, "$message");
+    case "InspectResult":
+      return decodeInspectResult(record, "$message");
     case "WorkerError":
       return decodeWorkerError(record, "$message");
     default:

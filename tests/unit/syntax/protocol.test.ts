@@ -45,7 +45,7 @@ const fixtures: ProtocolMessage[] = [
   {
     type: "InspectDocument",
     ...requestMeta,
-    documentVersion: 12,
+    expectedVersion: 12,
     maxDepth: 8,
     maxNodes: 2000,
   },
@@ -66,6 +66,23 @@ const fixtures: ProtocolMessage[] = [
         end: { line: 0, character: 8 },
       },
     ],
+  },
+  {
+    type: "InspectResult",
+    ...requestMeta,
+    documentVersion: 12,
+    root: {
+      type: "source_file",
+      isNamed: true,
+      range: {
+        start: { line: 0, character: 0 },
+        end: { line: 0, character: 9 },
+      },
+      children: [],
+      truncated: false,
+    },
+    nodeCount: 1,
+    truncated: false,
   },
   {
     type: "WorkerError",
@@ -97,7 +114,8 @@ describe("Tree-sitter Worker protocol", () => {
       { ...fixtures[4], maxNodes: "2000" },
       { ...fixtures[5], workerGeneration: -1 },
       { ...fixtures[6], changedRanges: [{ start: { line: 0, character: 0 } }] },
-      { ...fixtures[7], code: "NOT_A_REAL_ERROR" },
+      { ...fixtures[7], root: { type: "source_file" } },
+      { ...fixtures[8], code: "NOT_A_REAL_ERROR" },
       { ...fixtures[0], unexpected: true },
       { type: "NotAProtocolMessage", protocolVersion: PROTOCOL_VERSION },
     ];
@@ -116,6 +134,27 @@ describe("Tree-sitter Worker protocol", () => {
     );
   });
 
+  it("rejects malformed or cyclic Inspector result DTOs", () => {
+    expect(() => decodeWorkerMessage({ ...fixtures[7], nodeCount: 2 })).toThrow(
+      ProtocolDecodeError,
+    );
+
+    const cyclicNode: Record<string, unknown> = {
+      type: "source_file",
+      isNamed: true,
+      range: {
+        start: { line: 0, character: 0 },
+        end: { line: 0, character: 0 },
+      },
+      children: [],
+      truncated: false,
+    };
+    cyclicNode.children = [cyclicNode];
+    expect(() => decodeWorkerMessage({ ...fixtures[7], root: cyclicNode, nodeCount: 2 })).toThrow(
+      ProtocolDecodeError,
+    );
+  });
+
   it("keeps ApplyChanges version semantics explicit", () => {
     const decoded = decodeWorkerMessage(fixtures[1]);
 
@@ -124,6 +163,13 @@ describe("Tree-sitter Worker protocol", () => {
       baseVersion: 11,
       nextVersion: 12,
     });
+    expect(decoded).not.toHaveProperty("documentVersion");
+  });
+
+  it("keeps Inspector expected version separate from its response version", () => {
+    const decoded = decodeWorkerMessage(fixtures[4]);
+
+    expect(decoded).toMatchObject({ type: "InspectDocument", expectedVersion: 12 });
     expect(decoded).not.toHaveProperty("documentVersion");
   });
 });

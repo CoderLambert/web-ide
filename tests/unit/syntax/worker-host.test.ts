@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vite-plus/test";
 
 import {
   PROTOCOL_VERSION,
+  type InspectResult,
   type OpenDocument,
   type WorkerRequest,
   type WorkerResponse,
@@ -22,6 +23,18 @@ const request = (requestId: number): OpenDocument => ({
   languageId: "sql",
   text: "SELECT 1;",
 });
+
+const inspectRequest: WorkerRequest = {
+  type: "InspectDocument",
+  protocolVersion: PROTOCOL_VERSION,
+  workerGeneration: 4,
+  requestId: 8,
+  sessionId: "session-8",
+  documentUri: "opaque-8",
+  expectedVersion: 3,
+  maxDepth: 4,
+  maxNodes: 20,
+};
 
 function createHost(handleRequest: WorkerRequestHandler = () => undefined) {
   const messages: WorkerResponse[] = [];
@@ -141,5 +154,33 @@ describe("WorkerHost", () => {
         requestId: null,
       }),
     );
+  });
+
+  it("allows an Inspector response without exposing parser objects", async () => {
+    const inspectResult: InspectResult = {
+      type: "InspectResult",
+      protocolVersion: PROTOCOL_VERSION,
+      workerGeneration: 4,
+      requestId: inspectRequest.requestId,
+      sessionId: inspectRequest.sessionId,
+      documentUri: inspectRequest.documentUri,
+      documentVersion: inspectRequest.expectedVersion,
+      root: null,
+      nodeCount: 0,
+      truncated: true,
+    };
+    const { host, messages } = createHost(() => inspectResult);
+
+    host.receive(inspectRequest);
+    await host.whenIdle();
+
+    expect(messages).toEqual([
+      {
+        type: "WorkerReady",
+        protocolVersion: PROTOCOL_VERSION,
+        workerGeneration: 4,
+      },
+      inspectResult,
+    ]);
   });
 });

@@ -66,6 +66,7 @@ function isWorkerResponse(message: ProtocolMessage): message is WorkerResponse {
   switch (message.type) {
     case "WorkerReady":
     case "ParseResult":
+    case "InspectResult":
     case "WorkerError":
       return true;
     default:
@@ -154,7 +155,9 @@ export class WorkerHost {
       ...(request === undefined ? {} : { documentUri: request.documentUri }),
       ...(request !== undefined && "documentVersion" in request
         ? { documentVersion: request.documentVersion }
-        : {}),
+        : request !== undefined && "expectedVersion" in request
+          ? { documentVersion: request.expectedVersion }
+          : {}),
     };
   }
 }
