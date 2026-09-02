@@ -60,7 +60,46 @@ Recovery 期间 pending request bounded 且不会因 restore response 误杀新 
 
 # M2 Review
 
-重点：Query pinned、build-time compatibility、runtime load/compile/cache、Capture DTO 隔离 Tree-sitter、单一 Semantic Token Owner、Folding/Selection 独立 provider。
+重点：Query provenance、offline reproducibility、当前 Web runtime 下的 Query 执行兼容性、runtime lifecycle、稳定 capability DTO、版本一致性、derived request backpressure、单一 Semantic Token Owner、Folding/Selection Provider 边界。
+
+必须检查：
+
+```text
+当前 SQL Grammar 实际只自带 highlights/indents，不伪造 folds/injections/locals
+M2 只同步当前需要的 highlights + folds
+folds 来源 repository/revision/path/license 可追踪并对 pinned grammar 编译/执行验证
+第三方 Query provenance/license/patch 可追踪
+sync-language-assets 是显式维护命令，normal build/runtime 不访问上游网络
+verify-language-assets 可离线失败/成功复现
+Query 不只 compile，还在当前 web-tree-sitter runtime 上执行 behavior fixtures
+SQL highlights #match? numeric/float compatibility patch 有声明、有回归测试
+same language + query kind 不重复 compile
+compile failure 不永久 poison cache
+Worker recovery 后 Query 可重建
+dispose 后 compiled Query 释放
+Highlight/Folding/Selection 使用 versioned request/result
+raw QueryCapture/SyntaxNode/Tree 不跨 Worker 边界
+upstream capture name 在 language-specific Worker adapter 映射成 project token vocabulary
+Selection 使用 Worker parent chain，不复用 AST Inspector transport
+stale result 不刷新 Monaco
+derived capability request bounded，不无界占用 FIFO
+100KB/1MB capability diagnostics 不导致 Worker crash/明显 backlog
+```
+
+红线，任一存在则 M2 FAIL：
+
+- Provider 或业务层直接依赖 Tree-sitter `Query` / `QueryCapture` / `SyntaxNode` / `Tree`。
+- 新增通用 `RunQuery` / `GetQueryCaptures` 让上层解释 raw capture。
+- Query runtime 从 GitHub / 上游网络加载资产。
+- 未验证就假定 SQL Grammar 自带 `folds.scm`。
+- `injections` / `locals` 在当前没有使用场景时被提前实现。
+- Query 只 compile，未验证当前 `web-tree-sitter` predicate behavior。
+- SQL numeric/float predicate compatibility patch 没有行为测试。
+- stale capability result 刷新 Monaco。
+- 每次编辑持续追加 derived query，Worker queue 无界增长。
+- Worker recovery/dispose 后 Query resource 泄漏或无法重建。
+- 未经复现问题升级 `web-tree-sitter` 或引入 Worker Pool / Scheduler。
+- Tree-sitter 与 LSP 同时成为第一阶段 Semantic Token Owner。
 
 ---
 
@@ -69,6 +108,19 @@ Recovery 期间 pending request bounded 且不会因 restore response 误杀新 
 重点：WorkspacePath / canonical URI / host path 三层边界、WorkspaceFileSystem contract、Backend persisted filesystem、RemoteWorkspaceFileSystem、dirty overlay、save/rename/delete 生命周期、Backend read-after-save 一致性。
 
 冻结边界：Backend Workspace Filesystem 是 persisted file content Source of Truth；Monaco Model 只是 open document / dirty overlay；Database 只保存 workspace metadata。只实现薄 `WorkspaceFileSystem` boundary 和当前 Web adapter，不建设双 Source of Truth；Backend real path 不得进入 Browser / Domain。
+
+额外必须检查：
+
+```text
+one IDE shell = one active workspace
+WorkspacePath root 用 "" 表示且只在允许 root 的目录操作中使用
+非 root WorkspacePath 只用 /，禁止 absolute / trailing / // . .. backslash NUL
+transport decode 后重新执行 WorkspacePath validation
+API 使用 workspaceId + WorkspacePath，不接受客户端 host root
+服务器先 authorize workspaceId，再解析 server-owned root
+path containment 不只检查 ..，symlink 不能逃逸 workspace root
+WorkspacePath ↔ canonical URI round-trip 一致
+```
 
 红线：
 
@@ -79,6 +131,9 @@ Recovery 期间 pending request bounded 且不会因 restore response 误杀新 
 - Monaco Model 被当作 persisted Source of Truth → `M2.5 FAIL`
 - LSP 直接读取浏览器不存在的虚拟文件 → `M2.5 FAIL`
 - Protocol 或响应 DTO 泄露 host filesystem path → `M2.5 FAIL`
+- 客户端可以提供/覆盖 Backend workspace root → `M2.5 FAIL`
+- encoded traversal / symlink 可以逃逸已授权 workspace root → `M2.5 FAIL`
+- 同一 IDE shell 同时保留两个 `file:///workspace/...` active namespace → `M2.5 FAIL`
 
 ---
 
@@ -106,7 +161,9 @@ Browser URI
 
 # M4 Review
 
-唯一核心问题：第二/第三语言接入是否主要靠配置？如果必须修改核心 Engine：`M4 FAIL`。
+唯一核心问题：第二/第三语言接入是否主要靠 language definition / asset / mapping / composition registration。
+
+允许修改集中式 language composition registration；如果必须修改通用 Tree-sitter runtime / Worker Protocol / Monaco Core 才能支持第二语言，则 `M4 FAIL`。
 
 ---
 

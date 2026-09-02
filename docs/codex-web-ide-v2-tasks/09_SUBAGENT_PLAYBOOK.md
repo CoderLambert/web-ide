@@ -68,7 +68,43 @@ Monaco Binding 未 PASS -> Recovery
 
 ## M2
 
-QueryManager/Capture DTO 稳定后，Highlight / Folding / Selection 可分给三个 Agent。
+依赖关系：
+
+```text
+M2-01 Query Asset Decision / Manifest
+              ↓
+M2-02 sync-language-assets.mjs
+              ↓
+M2-03 verify-language-assets.mjs
+          ┌───┴────────────────┐
+          ↓                    ↓
+M2-04 QueryManager      M2-05 Capability Protocol / DTO
+
+M2-04 + M2-05 → M2-06 Highlight
+M2-04 + M2-05 → M2-07 Folding
+M2-05         → M2-08 Selection
+
+M2-06 + M2-07 + M2-08
+              ↓
+        M2-09 Integration Gate
+```
+
+并行规则：
+
+- `M2-04` 与 `M2-05` 只有在 M2-03 PASS 后、且文件 ownership 分离时并行。
+- `M2-05` 修改 `protocol.ts` / `client.ts` 时，其他 Agent 不得同时修改这些文件。
+- `M2-06` 与 `M2-07` 必须等待 `M2-04 + M2-05 PASS`，之后可按 Worker service / Monaco adapter ownership 分开并行。
+- `M2-08` 只依赖 M2-05 的 capability contract，可与 M2-06/M2-07 并行，但不得重新定义 DTO。
+- Asset Pipeline / Validation Agent 不碰 Worker runtime；Provider Agent 不修改 asset sync/lock。
+
+禁止：
+
+```text
+Query asset 未验证 -> QueryManager
+Capability Protocol 未 PASS -> Monaco Provider 直接碰 Tree-sitter
+多个 Agent 自定义不同 SyntaxToken/Folding/Selection DTO
+Highlight 请求无界堆入 Worker FIFO
+```
 
 ## M2.5
 
@@ -80,7 +116,7 @@ W-01 WorkspacePath / URI Contract
 W-02 WorkspaceFileSystem Contract
               ↓
       ┌───────┴────────┐
-      │                │
+      ↓                ↓
 W-03 Backend FS   W-04 Remote FS / API
       └───────┬────────┘
               ↓
@@ -95,13 +131,15 @@ W-08 Integration Gate
 
 W-03 Backend adapter 与 W-04 Remote/API adapter 只有在 W-02 接口冻结后才能并行。不得再拆成 `WorkspaceStore` / `FileStore` 两套 persisted storage；Dirty Overlay 不提前并行。
 
+W-03 与 W-04 必须共享 W-01 冻结的 WorkspacePath fixtures / security contract，不能各自实现不同 normalization。Backend Security/Test Agent 可独立补 traversal、authorization、symlink escape fixtures，但不要改 frontend contract。
+
 ## M3
 
 协议冻结后，Gateway transport / process lifecycle / security tests 可拆分；SQL LS 选择适合独立 Spike Agent。
 
 ## M4
 
-TypeScript / Python / Formatter 可并行，前提是禁止修改核心 Engine。
+TypeScript / Python / Formatter 可并行。允许各语言修改独立 config/asset/mapping 和集中式 composition registration；禁止为了某语言修改通用 Tree-sitter runtime / Worker Protocol。
 
 ---
 

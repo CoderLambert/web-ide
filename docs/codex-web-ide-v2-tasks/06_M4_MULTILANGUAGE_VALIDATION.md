@@ -6,7 +6,7 @@
 
 最重要的规则：
 
-> 如果接入第二语言必须修改核心 Tree-sitter Engine / Worker / Monaco Core，M4 直接判定失败。
+> 第二/第三语言允许新增 language definition、asset、capture mapping 和 composition registration；如果必须为某个语言修改通用 Tree-sitter runtime / Worker Protocol / Monaco Core 逻辑，M4 直接判定失败。
 
 ---
 
@@ -18,7 +18,7 @@
 
 ## 实现
 
-只增加 TypeScript language config、pinned grammar/query assets 和必要 capture mapping。
+只增加 TypeScript language config、pinned grammar/query assets、必要 capture mapping，以及把该定义加入现有 language composition registration。
 
 ## 验证
 
@@ -28,6 +28,7 @@ AST / incremental parse / highlight / folding / selection 可用。
 
 - 不新增 `TypeScriptTreeSitterEngine`。
 - 不修改通用 Worker Protocol。
+- 不为 TypeScript 增加专用 Worker runtime 分支。
 
 ---
 
@@ -67,13 +68,18 @@ References
 
 通过同一 Language Registry 接入 Python Tree-sitter 资产。
 
+## 实现
+
+只增加 Python language config、pinned grammar/query assets、必要 capture mapping 和 composition registration。
+
 ## 验证
 
 AST / incremental parse / highlight / folding / selection。
 
 ## 不要做
 
-- 不改核心 Engine。
+- 不改通用 Tree-sitter runtime / protocol。
+- 不新增语言专用 Worker。
 
 ---
 
@@ -120,12 +126,15 @@ AST / incremental parse / highlight / folding / selection。
 新增 TS/Python 是否：
 
 ```text
-无需修改核心 Tree-sitter Engine
+只需新增 language definition / asset / capture mapping / composition registration
+无需修改通用 Tree-sitter runtime/engine logic
 无需新增语言专用 Worker
 无需新增语言专用 Monaco Core
 无需修改 Workspace URI Contract
 无需修改 LSP Gateway Protocol
 ```
+
+允许为了注册新语言修改集中式 composition list / builtin registry；这不算核心 Engine 失败。
 
 如果为了第二语言出现大量核心特殊分支：
 

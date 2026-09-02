@@ -14,6 +14,19 @@
 
 如果发现后续问题，只记录在结果里，不提前处理。
 
+### 执行文档优先级
+
+主 V2 文档负责长期架构方向，当前阶段任务文档负责可执行细节。若任务编号、依赖、DTO、脚本名或阶段实现细节出现冲突，执行优先级固定为：
+
+```text
+当前阶段任务文档
+  > 08_REVIEW_GATES.md
+  > TASK_INDEX.md / 09_SUBAGENT_PLAYBOOK.md
+  > 主 V2 文档中的概念示例
+```
+
+不要把不同版本的示例拼接成新的实现。发现冲突时先修文档，不自行扩大实现范围。
+
 ---
 
 ## 2. 稳定优先
@@ -81,6 +94,7 @@ DAP            = Debug
 - Backend host path 只能存在于 `BackendWorkspaceFileSystem` / deployment adapter 内，不得进入 Browser、Domain、Protocol 或其他上层类型。
 - Semantic / LSP 上层依赖 transport boundary，不把当前 WebSocket 实现写死为上层 API。
 - 当前只实现 Web 所需的 Remote/Backend Workspace Filesystem adapter；不为 Desktop stdio 或 Neovim adapter 预留超出当前 Web 需求的实现。
+- Tree-sitter Query、`SyntaxNode`、`Tree`、`QueryCapture` 只存在于 Syntax Worker / adapter 内；跨 Worker 与 Provider 边界只传版本化、可序列化的项目 DTO。
 
 ---
 

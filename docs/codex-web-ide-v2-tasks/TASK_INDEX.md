@@ -1,5 +1,13 @@
 # Codex Task Master Index
 
+当前状态：
+
+```text
+S0 PASS / sealed
+M1 PASS / sealed
+Next: M2 Syntax UX
+```
+
 ## Phase S0
 
 ```text
@@ -45,23 +53,42 @@ M1-11 Monaco Binding
 ## Phase M2
 
 ```text
-M2-01 → M2-02 → M2-03 → M2-04 → M2-05
-                                      ├→ M2-06 Highlight
-                                      ├→ M2-07 Folding
-                                      └→ M2-08 Selection
-                                              ↓
-                                            M2-09 → REVIEW
+M2-01 Query Assets
+        ↓
+M2-02 Asset Sync
+        ↓
+M2-03 Asset Verify
+     ┌──┴──────────────┐
+     ↓                 ↓
+M2-04 QueryManager  M2-05 Capability Protocol/DTO
+
+M2-04 + M2-05 → M2-06 Highlight
+M2-04 + M2-05 → M2-07 Folding
+M2-05         → M2-08 Selection
+
+M2-06 + M2-07 + M2-08
+        ↓
+M2-09 Final Gate → REVIEW
 ```
 
 ## Phase M2.5
 
 ```text
-W-01
- ├→ W-02 ─┐
- └→ W-03 ─┤
-           └→ W-04 → W-05
-                │
-                └→ W-06 → W-07 → W-08 → REVIEW
+W-01 WorkspacePath / URI
+        ↓
+W-02 WorkspaceFileSystem Contract
+     ┌──┴──────────────┐
+     ↓                 ↓
+W-03 Backend FS   W-04 Remote FS / API
+     └──────┬──────────┘
+            ↓
+W-05 Monaco / Dirty Overlay
+            ↓
+W-06 Operations Lifecycle
+            ↓
+W-07 Backend Visibility
+            ↓
+W-08 Integration Gate → REVIEW
 ```
 
 ## Phase M3

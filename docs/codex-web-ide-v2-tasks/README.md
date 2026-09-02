@@ -2,6 +2,16 @@
 
 本目录把《TanStack Start + Monaco + Tree-sitter + LSP 多语言 Web IDE 实施方案 V2》拆成可直接交给 Codex 顺序执行的任务。
 
+## 当前状态
+
+```text
+S0 Runtime Compatibility   PASS / sealed
+M1 Syntax Foundation       PASS / sealed
+Next                       M2 Syntax UX
+```
+
+M2 尚未开始实现。当前执行入口是 `03_M2_SYNTAX_UX.md`；M1 实现不因 M2 Preflight 重新打开。
+
 ## 使用方式
 
 只给 Codex 当前阶段文档，不要一次把所有阶段都要求实现。
@@ -32,7 +42,12 @@
 08_REVIEW_GATES.md
 09_SUBAGENT_PLAYBOOK.md
 10_TASK_TEMPLATE.md
+TASK_INDEX.md
 ```
+
+## 文档优先级
+
+主 V2 文档负责长期架构方向；当前阶段文档负责可执行细节。若任务编号、依赖、DTO、脚本名或阶段实现细节出现冲突，按 `00_GLOBAL_RULES.md` 的文档优先级处理，不把旧示例和新任务混合实现。
 
 ## 执行原则
 
@@ -81,5 +96,5 @@ M1 不通过 → 禁止进入 M2
 M2 不通过 → 禁止进入 M2.5
 M2.5 不通过 → 禁止进入 M3
 M3 Security Gate 不通过 → 禁止生产部署
-第二语言需要修改核心 Engine → M4 FAIL
+第二语言需要修改通用 runtime/protocol/core → M4 FAIL
 ```
