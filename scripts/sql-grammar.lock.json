@@ -1,0 +1,13 @@
+{
+  "repository": "https://github.com/DerekStride/tree-sitter-sql.git",
+  "revision": "7b51ecda191d36b92f5a90a8d1bc3faef1c7b8b8",
+  "tag": "v0.3.11",
+  "license": "MIT",
+  "treeSitterCli": "0.25.10",
+  "emscripten": "4.0.4",
+  "abi": 15,
+  "wasmBytes": 2468133,
+  "wasmSha256": "d16a31c479635dbe97ef89be8b49c6e55efd201e1d3520ac54fe92095a34c4d2",
+  "licenseSha256": "3b3e4e4252d5d7d1c18e1257005f23242bf0580ad619204fd093c99b8c56748d",
+  "wasmPath": "public/languages/sql/tree-sitter-sql.wasm"
+}
