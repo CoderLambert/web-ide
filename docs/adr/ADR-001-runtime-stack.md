@@ -30,7 +30,7 @@ All core versions are exact in `package.json` and represented in `pnpm-lock.yaml
 - Monaco creates and disposes an editor, model, and provider, then survives route remount.
 - A module Worker initializes web-tree-sitter, loads the pinned SQL grammar, parses `SELECT id, name FROM users WHERE active = true;`, and restarts after termination.
 - The LSP client connects to the disposable mock server, initializes, completes a JSON-RPC request/response round trip, disconnects, reconnects, and disposes.
-- The production preview passes all five Playwright tests with zero captured browser console errors and zero uncaught page errors.
+- The production preview passes all six Playwright tests with zero captured browser console errors and zero uncaught page errors.
 
 The LSP probe also clears a rejected API initialization promise so a failed first start can be retried. Unmount disposal catches asynchronous cleanup failures, and socket closure is attempted even if the language client dispose call rejects.
 

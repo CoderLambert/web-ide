@@ -27,7 +27,7 @@ Run the complete production gate with one command:
 pnpm verify:s0
 ```
 
-The gate runs the frozen install, TypeScript typecheck, formatting/lint checks, production build, production preview, and five Playwright tests. The tests cover Monaco remount/dispose, Tree-sitter Worker init/terminate/restart, SQL grammar load, SQL parse, LSP initialize/request/disconnect/reconnect/dispose, and assert zero browser console errors and zero uncaught page errors.
+The gate runs the frozen install, TypeScript typecheck, formatting/lint checks, production build, production preview, and six Playwright tests. The tests cover Monaco remount/dispose, Tree-sitter Worker init/terminate/restart, SQL grammar load, SQL parse, LSP initialize/request/disconnect/reconnect/dispose, and assert zero browser console errors and zero uncaught page errors.
 
 Individual commands:
 

@@ -60,10 +60,10 @@
       "installFrozen": "PASS",
       "typecheck": "PASS",
       "check": "PASS",
-      "tests": "PASS: 5 Playwright tests",
+      "tests": "PASS: 6 Playwright tests",
       "productionBuild": "PASS",
       "productionPreview": "PASS",
-      "productionE2E": "PASS: 5 Playwright tests",
+      "productionE2E": "PASS: 6 Playwright tests",
       "sqlGrammarReproducibleBuild": "PASS: pinned revision and artifact unchanged"
     },
     "coverage": [
