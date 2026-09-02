@@ -12,6 +12,7 @@
     "build:sql-grammar": "node scripts/build-sql-grammar.mjs",
     "preview": "vp preview",
     "test:s0:monaco": "playwright test tests/s0/monaco-lifecycle.spec.ts",
+    "test:s0:sql-parse": "playwright test tests/s0/sql-parse.spec.ts",
     "test:s0:sql-grammar": "playwright test tests/s0/sql-grammar-load.spec.ts",
     "test:s0:tree-sitter": "playwright test tests/s0/tree-sitter-runtime.spec.ts",
     "db:generate": "drizzle-kit generate",

@@ -2,8 +2,16 @@ import { useCallback, useEffect, useState } from "react";
 
 type ProbeState = "loading" | "ready" | "terminated" | "error";
 
+const SQL_PARSE_SOURCE = "SELECT id, name FROM users WHERE active = true;";
+
+interface ParseResult {
+  hasError: boolean;
+  rootType: string;
+  treeString: string;
+}
+
 interface TreeSitterProbeProps {
-  onInitialized: () => void;
+  onInitialized: (result: ParseResult) => void;
   onStateChange: (state: ProbeState) => void;
   onTerminated: () => void;
 }
@@ -29,7 +37,27 @@ function TreeSitterProbe({ onInitialized, onStateChange, onTerminated }: TreeSit
         "type" in event.data &&
         event.data.type === "ready"
       ) {
-        onInitialized();
+        worker.postMessage({ source: SQL_PARSE_SOURCE, type: "parse" });
+        return;
+      }
+
+      if (
+        typeof event.data === "object" &&
+        event.data !== null &&
+        "type" in event.data &&
+        event.data.type === "parse-result" &&
+        "hasError" in event.data &&
+        typeof event.data.hasError === "boolean" &&
+        "rootType" in event.data &&
+        typeof event.data.rootType === "string" &&
+        "treeString" in event.data &&
+        typeof event.data.treeString === "string"
+      ) {
+        onInitialized({
+          hasError: event.data.hasError,
+          rootType: event.data.rootType,
+          treeString: event.data.treeString,
+        });
         onStateChange("ready");
         return;
       }
@@ -75,16 +103,19 @@ export function TreeSitterRuntimeProbe() {
   const [mounted, setMounted] = useState(true);
   const [state, setState] = useState<ProbeState>("loading");
   const [initializedCount, setInitializedCount] = useState(0);
+  const [parseResult, setParseResult] = useState<ParseResult | null>(null);
   const [terminatedCount, setTerminatedCount] = useState(0);
 
-  const handleInitialized = useCallback(() => {
+  const handleInitialized = useCallback((result: ParseResult) => {
     setInitializedCount((count) => count + 1);
+    setParseResult(result);
   }, []);
   const handleStateChange = useCallback((nextState: ProbeState) => {
     setState(nextState);
   }, []);
   const handleTerminated = useCallback(() => {
     setTerminatedCount((count) => count + 1);
+    setParseResult(null);
     setState("terminated");
   }, []);
 
@@ -106,6 +137,20 @@ export function TreeSitterRuntimeProbe() {
       <p aria-live="polite" data-testid="tree-sitter-status">
         {state}
       </p>
+      <dl data-testid="tree-sitter-parse-result">
+        <dt>SQL source</dt>
+        <dd data-testid="tree-sitter-parse-source">{SQL_PARSE_SOURCE}</dd>
+        <dt>Root type</dt>
+        <dd data-testid="tree-sitter-root-type">{parseResult?.rootType ?? ""}</dd>
+        <dt>Has error</dt>
+        <dd data-testid="tree-sitter-has-error">
+          {parseResult === null ? "" : String(parseResult.hasError)}
+        </dd>
+        <dt>Tree</dt>
+        <dd>
+          <pre data-testid="tree-sitter-tree-string">{parseResult?.treeString ?? ""}</pre>
+        </dd>
+      </dl>
       {mounted ? (
         <TreeSitterProbe
           onInitialized={handleInitialized}
