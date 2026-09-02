@@ -47,6 +47,7 @@ export class WorkerSupervisorError extends Error {
 interface ActiveWorker {
   generation: number;
   worker: WorkerLike;
+  readyMessageReceived: boolean;
   onMessage: (event: MessageEvent<unknown>) => void;
   onError: (event: ErrorEvent) => void;
 }
@@ -133,6 +134,9 @@ export class WorkerSupervisor {
     try {
       const decoded = decodeWorkerMessage(input);
       if (decoded.type !== "WorkerReady") {
+        if (activeWorker.readyMessageReceived) {
+          return;
+        }
         throw new ProtocolDecodeError(
           "INVALID_MESSAGE",
           `Expected WorkerReady while starting, received "${decoded.type}".`,
@@ -144,6 +148,7 @@ export class WorkerSupervisor {
           `WorkerReady generation ${decoded.workerGeneration} does not match ${activeWorker.generation}.`,
         );
       }
+      activeWorker.readyMessageReceived = true;
     } catch (error: unknown) {
       this.fail(error);
       return;
@@ -226,6 +231,7 @@ export class WorkerSupervisor {
     const activeWorker: ActiveWorker = {
       generation,
       worker,
+      readyMessageReceived: false,
       onMessage: (event) => this.handleMessage(activeWorker, event.data),
       onError: (event) => this.handleError(activeWorker, event),
     };

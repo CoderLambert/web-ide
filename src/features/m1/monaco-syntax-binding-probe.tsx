@@ -42,6 +42,7 @@ interface ProbeResources {
   binding?: MonacoSyntaxDocumentBinding;
   client?: TreeSitterClient;
   supervisor?: WorkerSupervisor;
+  worker?: Worker;
 }
 
 interface ProbeStatus {
@@ -49,6 +50,7 @@ interface ProbeStatus {
   documentVersion: number | undefined;
   parseTimeMs: number | undefined;
   hasErrors: boolean | undefined;
+  workerGeneration: number;
 }
 
 function SyntaxBindingProbe() {
@@ -59,8 +61,10 @@ function SyntaxBindingProbe() {
     documentVersion: undefined,
     parseTimeMs: undefined,
     hasErrors: undefined,
+    workerGeneration: 0,
   });
   const [inspectionText, setInspectionText] = useState("No AST inspection requested.");
+  const [probeModelVersion, setProbeModelVersion] = useState<number>();
 
   useEffect(() => {
     const host = hostRef.current;
@@ -89,14 +93,13 @@ function SyntaxBindingProbe() {
           model: resources.model,
         });
 
-        let activeWorker: Worker | undefined;
         resources.supervisor = new WorkerSupervisor({
           createWorker: (workerGeneration) => {
             const worker = new Worker(
               new URL("../../syntax/tree-sitter/worker/syntax.worker.ts", import.meta.url),
               { name: `m1-syntax-${workerGeneration}`, type: "module" },
             );
-            activeWorker = worker;
+            resources.worker = worker;
             worker.postMessage({ type: "initialize", workerGeneration });
             return worker;
           },
@@ -107,6 +110,9 @@ function SyntaxBindingProbe() {
               : [binding.openDocumentSnapshot];
           },
           onWorkerReady: (worker, workerGeneration) => {
+            if (!cancelled) {
+              setStatus((current) => ({ ...current, workerGeneration }));
+            }
             resources.client?.replaceWorker(worker, workerGeneration);
           },
           restoreOpenDocuments: async () => {
@@ -123,11 +129,11 @@ function SyntaxBindingProbe() {
             return;
           }
 
-          if (activeWorker === undefined) {
+          if (resources.worker === undefined) {
             throw new Error("Syntax worker was not created.");
           }
           resources.client = new TreeSitterClient(
-            activeWorker,
+            resources.worker,
             resources.supervisor.workerGeneration,
           );
           resources.binding = new MonacoSyntaxDocumentBinding({
@@ -139,6 +145,7 @@ function SyntaxBindingProbe() {
                 documentVersion: snapshot.documentVersion,
                 parseTimeMs: snapshot.parseTimeMs,
                 hasErrors: snapshot.hasErrors,
+                workerGeneration: resources.supervisor?.workerGeneration ?? 0,
               });
             },
             onError: (error) => {
@@ -163,6 +170,34 @@ function SyntaxBindingProbe() {
       resources.model?.dispose();
     };
   }, []);
+
+  const recoveryProbeEnabled =
+    typeof window !== "undefined" &&
+    new URLSearchParams(window.location.search).has("m1RecoveryTest");
+
+  const injectWorkerFailure = (): void => {
+    const worker = resourcesRef.current.worker;
+    if (worker === undefined) {
+      return;
+    }
+
+    worker.dispatchEvent(new ErrorEvent("error", { message: "Probe-injected Worker failure." }));
+  };
+
+  const injectWorkerFailureAndDisposeModel = (): void => {
+    injectWorkerFailure();
+    resourcesRef.current.model?.dispose();
+  };
+
+  const applyProbeEdit = (): void => {
+    const model = resourcesRef.current.model;
+    if (model === undefined || model.isDisposed()) {
+      return;
+    }
+
+    model.setValue(`${model.getValue()} `);
+    setProbeModelVersion(model.getVersionId());
+  };
 
   const inspectCurrentDocument = (): void => {
     const binding = resourcesRef.current.binding;
@@ -199,7 +234,9 @@ function SyntaxBindingProbe() {
     <main
       data-document-version={status.documentVersion ?? ""}
       data-has-errors={status.hasErrors ?? ""}
+      data-model-version={probeModelVersion ?? ""}
       data-parse-time-ms={status.parseTimeMs ?? ""}
+      data-worker-generation={status.workerGeneration}
       data-testid="m1-monaco-syntax-binding"
       style={{ display: "grid", gap: 12, margin: "0 auto", maxWidth: 960, padding: 24 }}
     >
@@ -219,6 +256,27 @@ function SyntaxBindingProbe() {
       <button data-testid="m1-ast-inspect" onClick={inspectCurrentDocument} type="button">
         Inspect AST
       </button>
+      {recoveryProbeEnabled ? (
+        <div data-testid="m1-recovery-probe-controls">
+          <button
+            data-testid="m1-inject-worker-failure"
+            onClick={injectWorkerFailure}
+            type="button"
+          >
+            Inject Worker Failure
+          </button>
+          <button data-testid="m1-apply-probe-edit" onClick={applyProbeEdit} type="button">
+            Apply Monaco Edit
+          </button>
+          <button
+            data-testid="m1-fail-and-dispose-model"
+            onClick={injectWorkerFailureAndDisposeModel}
+            type="button"
+          >
+            Fail and Dispose Model
+          </button>
+        </div>
+      ) : null}
       <pre data-testid="m1-ast-inspect-result" style={{ overflow: "auto", maxHeight: 240 }}>
         {inspectionText}
       </pre>

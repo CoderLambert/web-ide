@@ -194,6 +194,44 @@ describe("WorkerSupervisor", () => {
     expect(restoreOpenDocuments).toHaveBeenCalledWith([latestSnapshot], 2);
   });
 
+  it("keeps the recovered Worker alive while restoring its document", async () => {
+    const firstWorker = new FakeWorker();
+    const secondWorker = new FakeWorker();
+    const parseResult = {
+      type: "ParseResult" as const,
+      protocolVersion: PROTOCOL_VERSION,
+      workerGeneration: 2,
+      requestId: 1,
+      sessionId: "session-1",
+      documentUri: "opaque-document-id",
+      documentVersion: 1,
+      parseTimeMs: 0,
+      hasErrors: false,
+      changedRanges: [],
+    };
+    const supervisor = new WorkerSupervisor({
+      createWorker: (generation) => (generation === 1 ? firstWorker : secondWorker),
+      getOpenDocumentSnapshots: () => [],
+      restoreOpenDocuments: async (_snapshots, generation) => {
+        if (generation === 2) {
+          secondWorker.emitMessage(parseResult);
+        }
+      },
+    });
+
+    const firstStart = supervisor.start();
+    firstWorker.emitMessage(ready(1));
+    await firstStart;
+    firstWorker.emitError("crashed");
+
+    const recovery = supervisor.start();
+    secondWorker.emitMessage(ready(2));
+    await recovery;
+
+    expect(supervisor.state).toBe("ready");
+    expect(secondWorker.terminateSpy).not.toHaveBeenCalled();
+  });
+
   it("does not restore a document closed during recovery", async () => {
     const firstWorker = new FakeWorker();
     const secondWorker = new FakeWorker();
