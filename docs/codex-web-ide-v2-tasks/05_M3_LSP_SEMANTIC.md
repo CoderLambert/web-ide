@@ -16,6 +16,28 @@ Semantic / LSP 上层只能依赖 transport boundary 和 session contract，不�
 
 不要实现 Desktop stdio，也不要实现 Neovim adapter。Desktop / Neovim 只作为未来架构边界检查；不得借 M3 提前建设 UniversalPlatform、UniversalEditor 或 UniversalTreeSitterEngine。
 
+## Workspace Filesystem View（冻结）
+
+Language Server 必须看到与 canonical `rootUri` 一致的 filesystem view。Web 当前推荐：
+
+```text
+Backend real workspace
+        ↓ mount / jail
+    /workspace
+        ↓
+file:///workspace/...
+```
+
+因此：
+
+```text
+Browser URI
+  = LSP URI
+  = Language Server 可访问的逻辑 filesystem view
+```
+
+Workspace persisted content 仍只来自 Backend Workspace Filesystem；未保存内容通过 LSP document overlay 传递。Semantic / LSP 上层只依赖 canonical URI 与 transport/session boundary，不直接依赖 host path，也不默认设计复杂 JSON-RPC URI rewrite。
+
 ---
 
 # LSP-01 — Gateway Protocol / Session Contract
@@ -183,7 +205,7 @@ Gateway 能针对一个 Workspace 启动选定 SQL LS，并完成 initialize/ope
 
 ## 实现
 
-Workspace persisted files 来自 Backend Workspace；未保存内容通过 didOpen/didChange overlay。
+Workspace persisted files 来自 Backend Workspace Filesystem；未保存内容通过 didOpen/didChange overlay。
 
 ## 验证
 

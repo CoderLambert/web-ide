@@ -66,11 +66,19 @@ Recovery 期间 pending request bounded 且不会因 restore response 误杀新 
 
 # M2.5 Review
 
-重点：Workspace Source of Truth、canonical URI、host path 隔离、dirty overlay、save/rename/delete 生命周期、Backend snapshot 一致。
+重点：WorkspacePath / canonical URI / host path 三层边界、WorkspaceFileSystem contract、Backend persisted filesystem、RemoteWorkspaceFileSystem、dirty overlay、save/rename/delete 生命周期、Backend read-after-save 一致性。
 
 冻结边界：Backend Workspace Filesystem 是 persisted file content Source of Truth；Monaco Model 只是 open document / dirty overlay；Database 只保存 workspace metadata。只实现薄 `WorkspaceFileSystem` boundary 和当前 Web adapter，不建设双 Source of Truth；Backend real path 不得进入 Browser / Domain。
 
-红线：LSP 直接读取浏览器不存在的虚拟文件；protocol 泄露 host filesystem path。
+红线：
+
+- 存在第二份 persisted source content → `M2.5 FAIL`
+- Browser 保存需要先写 Browser Store 再 sync Backend → `M2.5 FAIL`
+- Workspace Core 直接依赖 `fetch` → `M2.5 FAIL`
+- Domain 直接依赖 host filesystem path → `M2.5 FAIL`
+- Monaco Model 被当作 persisted Source of Truth → `M2.5 FAIL`
+- LSP 直接读取浏览器不存在的虚拟文件 → `M2.5 FAIL`
+- Protocol 或响应 DTO 泄露 host filesystem path → `M2.5 FAIL`
 
 ---
 
@@ -79,6 +87,16 @@ Recovery 期间 pending request bounded 且不会因 restore response 误杀新 
 重点：Gateway 不实现语义、客户端不能传任意 command、Workspace session 隔离、process lifecycle、auth/origin/allowlist、cleanup、成熟 SQL LS、Semantic Tokens 不冲突。
 
 冻结边界：当前链路仍是 Browser → WebSocket → Gateway → Language Server；Semantic / LSP 上层不得直接写死 WebSocket。Transport 只做到当前 Web 所需程度，不实现 Desktop stdio 或 Neovim adapter。
+
+额外检查：Language Server 必须看到与 canonical `rootUri` 一致的 filesystem view。Web 默认由 Backend real workspace 通过 mount / jail 暴露为 `/workspace`，使：
+
+```text
+Browser URI
+  = LSP URI
+  = Language Server 可访问的逻辑 filesystem view
+```
+
+红线：LSP URI 与 Language Server 实际 filesystem view 不一致 → `M3 FAIL`。不要默认引入复杂 JSON-RPC URI rewrite。
 
 ---
 

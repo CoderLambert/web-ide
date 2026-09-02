@@ -47,7 +47,7 @@ TanStack Start / Router / Vite
 ```text
 TanStack Start = Application Shell
 Monaco         = Editor Platform
-Workspace      = Project Source of Truth
+Workspace      = Project/File Domain
 Tree-sitter    = Syntax / Structure
 LSP            = Semantic
 DAP            = Debug
@@ -75,10 +75,12 @@ DAP            = Debug
 
 后续阶段必须遵守：
 
-- Workspace 的 persisted file content 是 Source of Truth；Monaco 只表示 open document / dirty overlay。
-- Backend real path 不得泄露到 Browser 或 Domain；Browser / Domain 只使用 canonical URI。
+- Backend Workspace Filesystem 的 persisted file content 是唯一 Source of Truth；Monaco 只表示 open document / dirty overlay，Database 只保存 workspace metadata。
+- Domain / Workspace Core 优先使用 `WorkspacePath`，例如 `src/main.ts`。
+- Monaco / Syntax / LSP 等需要 URI 的边界通过 `WorkspaceUriMapper` 生成 canonical URI，例如 `file:///workspace/src/main.ts`。
+- Backend host path 只能存在于 `BackendWorkspaceFileSystem` / deployment adapter 内，不得进入 Browser、Domain、Protocol 或其他上层类型。
 - Semantic / LSP 上层依赖 transport boundary，不把当前 WebSocket 实现写死为上层 API。
-- 不为 Desktop stdio 或 Neovim adapter 预留超出当前 Web 需求的实现。
+- 当前只实现 Web 所需的 Remote/Backend Workspace Filesystem adapter；不为 Desktop stdio 或 Neovim adapter 预留超出当前 Web 需求的实现。
 
 ---
 

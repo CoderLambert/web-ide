@@ -21,13 +21,13 @@ V2 不推翻原架构，而是把前两轮审查发现的风险正式修成工�
 | Tree-sitter    | Syntax / AST / Query / Incremental Parse | 冻结                       |
 | LSP            | Semantic 能力                            | 冻结                       |
 | DAP            | Debug Protocol / Adapter                 | 冻结                       |
-| Workspace      | 项目文件与 URI 的 Source of Truth        | V2 升级为核心层            |
+| Workspace      | 项目文件 Domain 与 Filesystem boundary   | V2 升级为核心层            |
 
 ### 1.2 最终原则
 
 ```text
-Monaco      = 编辑器平台
-Workspace   = 项目文件真相
+Monaco      = 编辑器平台 / open document
+Workspace   = 项目文件 Domain
 Tree-sitter = Syntax / Structure
 LSP         = Semantic
 DAP         = Debug
@@ -36,7 +36,22 @@ Worker      = Syntax Derived State
 LSP State   = Semantic Derived State
 ```
 
-**Monaco、Tree-sitter、LSP 都不是项目文件的 Source of Truth。**
+**Backend Workspace Filesystem 是 persisted file content 的唯一 Source of Truth；Monaco、Tree-sitter、LSP 都不是项目文件的 Source of Truth。**
+
+Workspace 的三层身份必须分开：
+
+```text
+WorkspacePath
+  src/main.ts
+        ↓ WorkspaceUriMapper
+Canonical Runtime URI
+  file:///workspace/src/main.ts
+        ↓ BackendWorkspaceFileSystem 内部映射
+Backend Host Path
+  /var/lib/web-ide/workspaces/<id>/src/main.ts
+```
+
+Domain / Workspace 使用 `WorkspacePath`；Monaco、Tree-sitter、LSP 等 URI 边界使用 canonical URI；Backend host path 只允许存在于 Backend Filesystem / deployment adapter 内。
 
 ---
 
@@ -218,26 +233,25 @@ production 验证结果
                                │
                 ┌──────────────┴──────────────┐
                 │                             │
-              Monaco                       Workspace
+              Monaco                    Workspace Domain
                 │                             │
-       ┌────────┴────────┐                    │
+       ┌────────┴────────┐             WorkspacePath
        │                 │                    │
-Tree-sitter Client    LSP Client              │
+Tree-sitter Client    LSP Client       RemoteWorkspaceFileSystem
        │                 │                    │
-     Worker          WebSocket                 │
+     Worker          WebSocket          Workspace API
        │                 │                    │
- Tree-sitter        LSP Gateway ◀─────────────┘
-       │                 │
-Grammar + Queries    Sandboxed Workspace
-                         │
-                   Language Server
+ Tree-sitter        LSP Gateway       BackendWorkspaceFileSystem
+       │                 │                    │
+ Grammar + Queries   Language Server  Real Workspace Directory
 ```
 
 ### Source of Truth
 
 ```text
-Workspace = 项目文件
-Monaco    = 当前打开文件的编辑 Buffer
+Backend Workspace Filesystem = persisted file content Source of Truth
+Monaco    = 当前打开文件的编辑 Buffer / dirty overlay
+Database  = workspace metadata
 
 Worker    = Syntax Derived State
 LSP       = Semantic Derived State
@@ -304,12 +318,15 @@ src/
 │       └── selection-range.ts
 │
 ├── workspace/
-│   ├── workspace-manager.ts
-│   ├── workspace-store.ts
-│   ├── file-store.ts
+│   ├── filesystem.ts
+│   ├── types.ts
 │   ├── uri-mapper.ts
 │   ├── dirty-overlay.ts
-│   └── types.ts
+│   └── remote-workspace-filesystem.ts
+│
+├── server/workspace/
+│   ├── workspace-api.ts
+│   └── backend-workspace-filesystem.ts
 │
 ├── language/
 │   ├── registry.ts
@@ -367,11 +384,13 @@ docs/
     └── ADR-001-runtime-stack.md
 ```
 
+以上是职责示意，不是现在锁死的物理目录。M2.5 应优先沿用仓库实际布局；目录命名不得重新引入 `workspace-store.ts` / `file-store.ts` 两套 persisted storage。
+
 ---
 
 # 7. Workspace / FileSystem
 
-V2 将 Workspace 从外围能力提升为核心层。
+V2 将 Workspace 从外围能力提升为核心层，但只冻结一个薄的 Web 所需 Filesystem boundary。Workspace 不再表示一个同时持有文件正文、metadata 和 URI 的 `Workspace Store`。
 
 原因：
 
@@ -382,72 +401,149 @@ Go         → go.mod / packages
 Rust       → Cargo.toml / modules
 ```
 
-LSP 不可能只依赖当前 Monaco 文件。
+LSP 不可能只依赖当前 Monaco 文件，但这不意味着 Browser 需要一份 persisted file store。Backend Workspace Filesystem 负责持久化内容，Monaco 负责 open document / dirty overlay，Database 只负责 workspace metadata。
 
----
-
-## 7.1 Workspace 模型
+## 7.1 统一 Workspace 模型
 
 ```text
-Workspace Store
-      │
-      ├── Persisted Files
-      ├── Metadata
-      └── Canonical URI
-             │
-             ├── Monaco Model
-             ├── Tree-sitter Session
-             └── LSP Document
+WorkspacePath
+  src/main.ts
+       │
+       ▼
+WorkspaceFileSystem
+       │
+       ├── Web: RemoteWorkspaceFileSystem
+       │             ↓ Workspace API
+       └── BackendWorkspaceFileSystem
+                     ↓
+              Real Workspace Directory
+              PERSISTED SOURCE OF TRUTH
 ```
 
-基础接口：
+Editor 侧：
+
+```text
+Backend File
+    │ read
+    ▼
+Monaco Model
+    │
+    ├── edit → dirty overlay
+    │
+    └── save → WorkspaceFileSystem.writeFile()
+```
+
+冻结职责：
+
+```text
+Backend Workspace Filesystem = persisted file content Source of Truth
+Monaco Model                = open document / dirty overlay
+Database                    = workspace metadata
+```
+
+禁止为同一份 persisted content 建立第二份 Store 或 Browser cache 作为 Source of Truth。
+
+## 7.2 Path / Canonical URI / Host Path
+
+三层身份必须显式分离：
+
+```text
+WorkspacePath
+  src/main.ts
+       │ WorkspaceUriMapper.toUri()
+       ▼
+Canonical Runtime URI
+  file:///workspace/src/main.ts
+       │ BackendWorkspaceFileSystem 内部映射
+       ▼
+Backend Host Path
+  /var/lib/web-ide/workspaces/<id>/src/main.ts
+```
+
+职责：
+
+```text
+Domain / Workspace     → WorkspacePath
+Monaco / Tree-sitter   → Canonical URI
+LSP                    → Canonical URI
+Backend FS Adapter     → Host Path
+```
+
+基础 contract：
 
 ```ts
+type WorkspacePath = string;
+
 interface WorkspaceIdentity {
   id: string;
   rootUri: string;
 }
 
 interface WorkspaceFile {
-  uri: string;
+  path: WorkspacePath;
   languageId?: string;
-  version?: number;
+}
+
+interface WorkspaceUriMapper {
+  toUri(path: WorkspacePath): string;
+  fromUri(uri: string): WorkspacePath;
 }
 ```
 
----
-
-## 7.2 URI Contract
-
-统一使用逻辑 URI，例如：
+Web 当前映射：
 
 ```text
-file:///workspace/src/main.ts
-file:///workspace/src/user.ts
+src/main.ts → file:///workspace/src/main.ts
 ```
 
-Browser 和 Backend 必须认同同一套 URI。
+Backend host path 只能存在于 Backend Filesystem / deployment adapter 内，不得进入 Browser、Domain、Protocol 或响应 DTO。
 
-禁止协议层直接出现：
+## 7.3 WorkspaceFileSystem 与 Web Adapter
+
+能力 contract：
+
+```ts
+interface WorkspaceEntry {
+  path: WorkspacePath;
+  kind: "file" | "directory";
+  languageId?: string;
+}
+
+interface WorkspaceFileSystem {
+  list(path: WorkspacePath): Promise<WorkspaceEntry[]>;
+  readFile(path: WorkspacePath): Promise<string>;
+  writeFile(path: WorkspacePath, content: string): Promise<void>;
+  createFile(path: WorkspacePath): Promise<void>;
+  createDirectory(path: WorkspacePath): Promise<void>;
+  rename(from: WorkspacePath, to: WorkspacePath): Promise<void>;
+  delete(path: WorkspacePath): Promise<void>;
+}
+```
+
+当前 Web 链路：
 
 ```text
-/home/user/project
-/var/lib/app/user-123
-/tmp/random-workspace
+Browser
+  → RemoteWorkspaceFileSystem
+  → Workspace API
+  → BackendWorkspaceFileSystem
+  → Real Workspace Directory
 ```
 
-真实宿主机路径必须封装在 Backend 内部。
+Workspace Core 只依赖 `WorkspaceFileSystem` contract，不直接依赖 `fetch`。当前只实现 Web adapter；不建设 `UniversalPlatform`、Desktop stdio 或 Neovim adapter。
 
----
-
-## 7.3 已保存内容与未保存内容
+## 7.4 已保存内容与未保存内容
 
 ### 已保存
 
 ```text
-Workspace Store
+Monaco save
     ↓
-Backend Workspace Files
+WorkspaceFileSystem.writeFile(path, content)
+    ↓
+Backend Workspace Filesystem
+    ↓
+Real Workspace Directory
 ```
 
 ### 未保存
@@ -455,14 +551,14 @@ Backend Workspace Files
 ```text
 Monaco Model
     ↓
-LSP didOpen / didChange
+dirty overlay
+    ↓
+后续 LSP didOpen / didChange document overlay
 ```
 
-Language Server 自己维护 open document overlay。
+每次按键不写 Backend file；Language Server 的 open document overlay 也不取代 Backend persisted content。
 
----
-
-## 7.4 LSP 前必须完成
+## 7.5 LSP 前必须完成
 
 ```text
 open
@@ -473,7 +569,9 @@ delete
 close
 ```
 
-后续再增加：
+每个操作都必须验证 Filesystem、Monaco Model、Dirty State、Syntax Session 的生命周期一致，且 rename/delete 后旧 Path、canonical URI、Model 和 Syntax Session 不残留。
+
+后续再考虑：
 
 ```text
 watch
@@ -481,6 +579,8 @@ search
 git
 filesystem index
 ```
+
+这些不是 M2.5 的 persisted content boundary，也不能引入第二份 Source of Truth。
 
 ---
 
@@ -1244,7 +1344,10 @@ create
 rename
 delete
 dirty overlay
-Browser ↔ Backend URI
+WorkspacePath normalization
+canonical URI mapping
+Browser save → Workspace API → Backend Filesystem read-after-save
+host path isolation
 ```
 
 ## LSP Integration
@@ -1379,22 +1482,27 @@ SQL Syntax MVP
 没有这一阶段，禁止进入 LSP。
 
 ```text
-M2.5.1 WorkspaceIdentity
-M2.5.2 Workspace Store
-M2.5.3 Canonical URI
-M2.5.4 File Store
-M2.5.5 Dirty Overlay
-M2.5.6 Backend Workspace Sync
-M2.5.7 open/save/create/rename/delete/close
+W-01 WorkspacePath / Canonical URI / WorkspaceUriMapper
+W-02 WorkspaceFileSystem Contract
+W-03 BackendWorkspaceFileSystem
+W-04 RemoteWorkspaceFileSystem / Workspace API
+W-05 Monaco Binding / Dirty Overlay
+W-06 Workspace Operations Lifecycle
+W-07 Backend Visibility Contract
+W-08 Workspace Integration Gate
 ```
 
-完成：
+统一模型：
 
 ```text
-Browser Workspace
-      ↕
-Backend Workspace
+WorkspacePath
+      ↓
+RemoteWorkspaceFileSystem → Workspace API → BackendWorkspaceFileSystem
+                                                       ↓
+                                             Real Workspace Directory
 ```
+
+Backend Workspace Filesystem 是 persisted file content 的唯一 Source of Truth；Monaco Model 是 open document / dirty overlay；Database 只保存 workspace metadata。
 
 ---
 
@@ -1658,7 +1766,7 @@ Codex 后续开发必须遵守：
 10. 不用未经 pin 的 WASM / Query / Grammar。
 11. 增量解析异常时优先 Full Resync。
 12. Worker 状态必须可重建。
-13. Workspace URI 是 Browser / Backend / LSP 的共同契约。
+13. WorkspacePath 是 Domain 的稳定文件身份；Monaco / Syntax / LSP 使用由 WorkspaceUriMapper 生成的 canonical URI；Backend host path 只存在于 Backend Filesystem adapter。
 14. 每个 Milestone 完成后必须 Review，再进入下一阶段。
 
 ---
@@ -1670,9 +1778,19 @@ Codex 后续开发必须遵守：
 ```text
 TanStack Start = Application Shell
 
-Monaco = Editor Platform
+Monaco = Editor Platform / open document / dirty overlay
 
-Workspace = Project Source of Truth
+Workspace = Project/File Domain
+
+Backend Workspace Filesystem = persisted file content Source of Truth
+
+Database = workspace metadata
+
+WorkspacePath = Domain file identity
+
+Canonical URI = Editor / Syntax / LSP file identity
+
+Backend Host Path = Backend Filesystem adapter internal detail
 
 Tree-sitter = Syntax / Structure
 

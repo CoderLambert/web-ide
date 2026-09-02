@@ -72,7 +72,28 @@ QueryManager/Capture DTO 稳定后，Highlight / Folding / Selection 可分给�
 
 ## M2.5
 
-URI Contract 冻结后，WorkspaceStore / Backend FileStore 可并行；Dirty Overlay 不提前并行。
+依赖关系必须保持单一 WorkspaceFileSystem 模型：
+
+```text
+W-01 WorkspacePath / URI Contract
+              ↓
+W-02 WorkspaceFileSystem Contract
+              ↓
+      ┌───────┴────────┐
+      │                │
+W-03 Backend FS   W-04 Remote FS / API
+      └───────┬────────┘
+              ↓
+W-05 Monaco + Dirty Overlay
+              ↓
+W-06 Operations Lifecycle
+              ↓
+W-07 Backend Visibility
+              ↓
+W-08 Integration Gate
+```
+
+W-03 Backend adapter 与 W-04 Remote/API adapter 只有在 W-02 接口冻结后才能并行。不得再拆成 `WorkspaceStore` / `FileStore` 两套 persisted storage；Dirty Overlay 不提前并行。
 
 ## M3
 
