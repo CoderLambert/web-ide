@@ -165,3 +165,66 @@ test("connects, initializes, reconnects, and disposes the Monaco LSP client", as
   expect(consoleErrors, "console.error messages").toEqual([]);
   expect(pageErrors, "uncaught page errors").toEqual([]);
 });
+
+test("retries LSP initialization after the first initialization fails", async ({ page }) => {
+  const consoleErrors: string[] = [];
+  const pageErrors: string[] = [];
+  const sentMethods: string[] = [];
+  let closedSockets = 0;
+  let socketCount = 0;
+
+  page.on("console", (message) => {
+    if (message.type() === "error") {
+      consoleErrors.push(message.text());
+    }
+  });
+  page.on("pageerror", (error) => {
+    pageErrors.push(error.message);
+  });
+  page.on("websocket", (webSocket) => {
+    if (new URL(webSocket.url()).port !== mockServerPort) {
+      return;
+    }
+
+    socketCount += 1;
+    webSocket.on("close", () => {
+      closedSockets += 1;
+    });
+    webSocket.on("framesent", ({ payload }) => {
+      const message = JSON.parse(payload.toString());
+
+      if (typeof message.method === "string") {
+        sentMethods.push(message.method);
+      }
+    });
+  });
+
+  await page.goto(`${baseUrl}/ide?s0LspPort=${mockServerPort}&s0FailLspInitOnce=1`);
+  await expect(page.locator('[data-testid="monaco-status"]')).toHaveText("ready", {
+    timeout: 30_000,
+  });
+
+  const status = page.locator('[data-testid="lsp-status"]');
+  const toggle = page.locator('[data-testid="lsp-toggle"]');
+
+  await toggle.click();
+  await expect(status).toHaveText("error");
+  expect(socketCount).toBe(0);
+
+  await toggle.click();
+  await expect(status).toHaveText("ready", { timeout: 30_000 });
+  await expect(page.locator('[data-testid="lsp-echo-result"]')).toHaveText(
+    "S0-06 WebSocket JSON-RPC round trip",
+  );
+  expect(socketCount).toBe(1);
+  expect(sentMethods).toEqual(expect.arrayContaining(["initialize", "initialized", "s0/echo"]));
+
+  await toggle.click();
+  await expect(status).toHaveText("disposed");
+  await expect.poll(() => closedSockets).toBe(1);
+
+  expect(consoleErrors).toHaveLength(1);
+  expect(consoleErrors[0]).toContain("Failed to initialize the S0 LSP JSON-RPC probe");
+  expect(consoleErrors[0]).toContain("Injected S0 LSP initialization failure");
+  expect(pageErrors, "uncaught page errors").toEqual([]);
+});

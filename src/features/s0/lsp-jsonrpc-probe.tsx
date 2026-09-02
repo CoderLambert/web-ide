@@ -18,31 +18,46 @@ interface EchoResult {
 }
 
 let vscodeApiInitialization: Promise<void> | undefined;
+let injectedInitFailure = false;
 
 function errorMessage(error: unknown) {
   return error instanceof Error ? error.message : String(error);
 }
 
+function shouldFailInitializationOnce() {
+  const enabled = new URLSearchParams(globalThis.location.search).get("s0FailLspInitOnce") === "1";
+
+  if (!enabled || injectedInitFailure) {
+    return false;
+  }
+
+  injectedInitFailure = true;
+  return true;
+}
+
 function initializeMonacoVscodeApi() {
   if (vscodeApiInitialization === undefined) {
-    const initialization = import("monaco-languageclient/vscodeApiWrapper").then(
-      async ({ MonacoVscodeApiWrapper }) => {
-        const api = new MonacoVscodeApiWrapper({
-          $type: "classic",
-          advanced: { loadExtensionServices: false },
-          viewsConfig: { $type: "EditorService" },
-          workspaceConfig: {
-            workspaceProvider: {
-              open: async () => false,
-              trusted: true,
-              workspace: undefined,
-            },
-          },
-        });
+    const initialization = Promise.resolve().then(async () => {
+      if (shouldFailInitializationOnce()) {
+        throw new Error("Injected S0 LSP initialization failure");
+      }
 
-        await api.start({ caller: "S0-06 LSP compatibility probe" });
-      },
-    );
+      const { MonacoVscodeApiWrapper } = await import("monaco-languageclient/vscodeApiWrapper");
+      const api = new MonacoVscodeApiWrapper({
+        $type: "classic",
+        advanced: { loadExtensionServices: false },
+        viewsConfig: { $type: "EditorService" },
+        workspaceConfig: {
+          workspaceProvider: {
+            open: async () => false,
+            trusted: true,
+            workspace: undefined,
+          },
+        },
+      });
+
+      await api.start({ caller: "S0-06 LSP compatibility probe" });
+    });
 
     vscodeApiInitialization = initialization.catch((error: unknown) => {
       // A failed first start must not poison later reconnect attempts.
