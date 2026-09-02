@@ -69,9 +69,9 @@ This repeats the low-impact identifier replacement 100 times after 10 warmup cal
 
 The prior approximately 270–291ms observation was therefore treated as a diagnostic signal, not an automatic reason to introduce Rope, Piece Table, persistent indexes, Worker Pool, Parser Pool, grammar changes, or dependency upgrades.
 
-## Before/after EditCodec optimization
+## Before/after EditCodec optimization (historical dense-metrics follow-up)
 
-Both runs used this same deterministic benchmark, with warmup 10, measurement 100, the same 100KB fixtures and positions, and the same one-character identifier replacement. The baseline was captured before commit `10d8095`; the current tables above are the after run.
+Both runs used the same deterministic benchmark, with warmup 10, measurement 100, the same 100KB fixtures and positions, and the same one-character identifier replacement. The baseline was captured before commit `10d8095`; the after column records the dense-metrics implementation that preceded this sparse-boundary follow-up.
 
 | Fixture                          | Position | EditCodec before P50/P95 | EditCodec after P50/P95 | Incremental RTT before P50/P95 | Incremental RTT after P50/P95 |
 | -------------------------------- | -------- | -----------------------: | ----------------------: | -----------------------------: | ----------------------------: |
@@ -85,3 +85,16 @@ Both runs used this same deterministic benchmark, with warmup 10, measurement 10
 Decision: keep the small local EditCodec optimization. Its public API and the Worker Protocol are unchanged; no new dependency, Rope, Piece Table, persistent text index, Worker Pool, Parser Pool, grammar change, or dependency upgrade was introduced. The observed post-optimization P95 is diagnostic evidence only and is not a `verify:m1` hard-fail threshold.
 
 The prior approximately 270–291ms observation was therefore treated as a diagnostic signal, first locating the cost in EditCodec before applying the permitted local optimization.
+
+## Before/after sparse boundary follow-up
+
+This comparison uses the same 100KB deterministic workload, positions, warmup, measurement count, and identifier replacement. The before values are the preceding dense-metrics implementation's after values above; the after values are the sparse-boundary implementation reported in this run. Timings remain environment-dependent.
+
+| Fixture                          | Position | Dense metrics P50/P95 | Sparse boundaries P50/P95 |
+| -------------------------------- | -------- | --------------------: | ------------------------: |
+| realistic multi-statement SQL    | start    |        0.40 / 0.50 ms |            0.00 / 0.10 ms |
+| realistic multi-statement SQL    | middle   |        0.40 / 0.50 ms |            0.10 / 0.20 ms |
+| realistic multi-statement SQL    | end      |        0.30 / 0.40 ms |            0.30 / 0.40 ms |
+| large-statement / worst-case SQL | start    |        0.30 / 0.50 ms |            0.00 / 0.00 ms |
+| large-statement / worst-case SQL | middle   |        0.30 / 0.40 ms |            0.10 / 0.20 ms |
+| large-statement / worst-case SQL | end      |        0.30 / 0.40 ms |            0.30 / 0.40 ms |
