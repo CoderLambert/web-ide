@@ -4,6 +4,7 @@ import { PROTOCOL_VERSION, type WorkerReady } from "../../../src/syntax/tree-sit
 import {
   WorkerSupervisor,
   type WorkerLike,
+  type OpenDocumentSnapshot,
 } from "../../../src/syntax/tree-sitter/worker-supervisor";
 
 type MessageListener = (event: MessageEvent<unknown>) => void;
@@ -13,6 +14,10 @@ class FakeWorker implements WorkerLike {
   private messageListeners = new Set<MessageListener>();
   private errorListeners = new Set<ErrorListener>();
   readonly terminateSpy = vi.fn();
+
+  postMessage(): void {
+    // Supervisor tests only exercise lifecycle messages from the Worker.
+  }
 
   addEventListener(type: "message" | "error", listener: MessageListener | ErrorListener): void {
     if (type === "message") {
@@ -134,9 +139,12 @@ describe("WorkerSupervisor", () => {
     expect(supervisor.state).toBe("failed");
   });
 
-  it("moves a ready Worker to failed on its error event", async () => {
+  it("moves a ready Worker to failed on its error event when recovery is disabled", async () => {
     const worker = new FakeWorker();
-    const supervisor = new WorkerSupervisor({ createWorker: () => worker });
+    const supervisor = new WorkerSupervisor({
+      createWorker: () => worker,
+      maxAutoRecoveries: 0,
+    });
     const startPromise = supervisor.start();
     worker.emitMessage(ready(1));
     await startPromise;
@@ -145,5 +153,93 @@ describe("WorkerSupervisor", () => {
 
     expect(supervisor.state).toBe("failed");
     expect(worker.terminateSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it("restarts once and restores the latest open document snapshots", async () => {
+    const firstWorker = new FakeWorker();
+    const secondWorker = new FakeWorker();
+    const workers = [firstWorker, secondWorker];
+    let latestSnapshot: OpenDocumentSnapshot = {
+      documentUri: "opaque-document-id",
+      sessionId: "session-1",
+      languageId: "sql",
+      documentVersion: 10,
+      text: "SELECT 1;",
+    };
+    const onWorkerReady = vi.fn();
+    const getOpenDocumentSnapshots = vi.fn(() => [latestSnapshot]);
+    const restoreOpenDocuments = vi.fn(async () => undefined);
+    const supervisor = new WorkerSupervisor({
+      createWorker: vi.fn(() => workers.shift() as FakeWorker),
+      getOpenDocumentSnapshots,
+      onWorkerReady,
+      restoreOpenDocuments,
+    });
+
+    const startPromise = supervisor.start();
+    firstWorker.emitMessage(ready(1));
+    await startPromise;
+    firstWorker.emitError("crashed");
+    latestSnapshot = { ...latestSnapshot, documentVersion: 12, text: "SELECT 2;" };
+
+    expect(supervisor.state).toBe("starting");
+    expect(supervisor.workerGeneration).toBe(2);
+    const recoveryPromise = supervisor.start();
+    secondWorker.emitMessage(ready(2));
+    await recoveryPromise;
+
+    expect(supervisor.state).toBe("ready");
+    expect(onWorkerReady).toHaveBeenCalledTimes(2);
+    expect(getOpenDocumentSnapshots).toHaveBeenCalledTimes(2);
+    expect(restoreOpenDocuments).toHaveBeenCalledWith([latestSnapshot], 2);
+  });
+
+  it("does not restore a document closed during recovery", async () => {
+    const firstWorker = new FakeWorker();
+    const secondWorker = new FakeWorker();
+    const snapshots: OpenDocumentSnapshot[] = [
+      {
+        documentUri: "opaque-document-id",
+        sessionId: "session-1",
+        languageId: "sql",
+        documentVersion: 10,
+        text: "SELECT 1;",
+      },
+    ];
+    const restoreOpenDocuments = vi.fn(async () => undefined);
+    const supervisor = new WorkerSupervisor({
+      createWorker: (generation) => (generation === 1 ? firstWorker : secondWorker),
+      getOpenDocumentSnapshots: () => snapshots,
+      restoreOpenDocuments,
+    });
+
+    const firstStart = supervisor.start();
+    firstWorker.emitMessage(ready(1));
+    await firstStart;
+    firstWorker.emitError("crashed");
+    snapshots.length = 0;
+    const recovery = supervisor.start();
+    secondWorker.emitMessage(ready(2));
+    await recovery;
+
+    expect(supervisor.state).toBe("ready");
+    expect(restoreOpenDocuments).toHaveBeenCalledWith([], 2);
+  });
+
+  it("stops after the bounded auto-recovery attempt", async () => {
+    const firstWorker = new FakeWorker();
+    const secondWorker = new FakeWorker();
+    const supervisor = new WorkerSupervisor({
+      createWorker: (generation) => (generation === 1 ? firstWorker : secondWorker),
+    });
+
+    const startPromise = supervisor.start();
+    firstWorker.emitMessage(ready(1));
+    await startPromise;
+    firstWorker.emitError("first crash");
+    secondWorker.emitError("second crash");
+
+    expect(supervisor.state).toBe("failed");
+    expect(secondWorker.terminateSpy).toHaveBeenCalledTimes(1);
   });
 });

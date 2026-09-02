@@ -98,6 +98,22 @@ function SyntaxBindingProbe() {
             worker.postMessage({ type: "initialize", workerGeneration });
             return worker;
           },
+          getOpenDocumentSnapshots: () => {
+            const binding = resources.binding;
+            return binding === undefined || binding.state === "closed"
+              ? []
+              : [binding.openDocumentSnapshot];
+          },
+          onWorkerReady: (worker, workerGeneration) => {
+            resources.client?.replaceWorker(worker, workerGeneration);
+          },
+          restoreOpenDocuments: async () => {
+            const binding = resources.binding;
+            if (binding === undefined || binding.state === "closed") {
+              return;
+            }
+            await binding.restore();
+          },
         });
 
         return resources.supervisor.start().then(() => {

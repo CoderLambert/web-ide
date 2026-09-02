@@ -85,7 +85,7 @@ function documentVersionForRequest(request: TreeSitterClientRequest): number | u
 }
 
 export class TreeSitterClient {
-  private readonly worker: TreeSitterClientWorker;
+  private worker: TreeSitterClientWorker;
   private generationValue: number;
   private nextRequestId = 1;
   private readonly pending = new Map<number, PendingRequest>();
@@ -109,8 +109,7 @@ export class TreeSitterClient {
 
     this.worker = worker;
     this.generationValue = workerGeneration;
-    this.worker.addEventListener("message", this.onMessage);
-    this.worker.addEventListener("error", this.onError);
+    this.attachWorker();
   }
 
   get workerGeneration(): number {
@@ -160,6 +159,24 @@ export class TreeSitterClient {
     this.postRequest(this.prepareRequest(request));
   }
 
+  replaceWorker(worker: TreeSitterClientWorker, workerGeneration: number): void {
+    this.assertUsable();
+    if (!Number.isInteger(workerGeneration) || workerGeneration < 0) {
+      throw new Error("workerGeneration must be a non-negative integer.");
+    }
+
+    this.rejectAll(
+      new TreeSitterClientError(
+        "WORKER_RESTARTED",
+        `Worker generation changed from ${this.generationValue} to ${workerGeneration}.`,
+      ),
+    );
+    this.detachWorker();
+    this.worker = worker;
+    this.generationValue = workerGeneration;
+    this.attachWorker();
+  }
+
   setWorkerGeneration(workerGeneration: number): void {
     this.assertUsable();
     if (!Number.isInteger(workerGeneration) || workerGeneration < 0) {
@@ -184,8 +201,7 @@ export class TreeSitterClient {
     }
 
     this.disposed = true;
-    this.worker.removeEventListener("message", this.onMessage);
-    this.worker.removeEventListener("error", this.onError);
+    this.detachWorker();
     this.rejectAll(
       new TreeSitterClientError("CLIENT_DISPOSED", "Tree-sitter client was disposed."),
     );
@@ -258,6 +274,16 @@ export class TreeSitterClient {
     for (const request of pending) {
       request.reject(error);
     }
+  }
+
+  private attachWorker(): void {
+    this.worker.addEventListener("message", this.onMessage);
+    this.worker.addEventListener("error", this.onError);
+  }
+
+  private detachWorker(): void {
+    this.worker.removeEventListener("message", this.onMessage);
+    this.worker.removeEventListener("error", this.onError);
   }
 
   private prepareRequest(request: TreeSitterClientRequest): WorkerRequest {

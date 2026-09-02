@@ -279,6 +279,32 @@ describe("MonacoSyntaxDocumentBinding", () => {
     binding.dispose();
   });
 
+  it("restores the current session from a fresh model snapshot", async () => {
+    const model = new FakeModel();
+    const client = new FakeClient();
+    const binding = new MonacoSyntaxDocumentBinding({
+      model: model as unknown as Monaco.editor.ITextModel,
+      client,
+      createSessionId: () => "session-1",
+    });
+    await settle();
+
+    model.text = "SELECT 2;";
+    model.versionId = 12;
+    await binding.restore();
+
+    expect(client.requests[1]).toEqual({
+      type: "OpenDocument",
+      sessionId: "session-1",
+      documentUri: "inmemory://binding/query.sql",
+      documentVersion: 12,
+      languageId: "sql",
+      text: "SELECT 2;",
+    });
+    expect(binding.snapshot).toMatchObject({ state: "ready", documentVersion: 12 });
+    binding.dispose();
+  });
+
   it("sends one fire-and-forget close on model disposal", async () => {
     const model = new FakeModel();
     const client = new FakeClient();

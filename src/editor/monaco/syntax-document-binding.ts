@@ -23,6 +23,11 @@ export interface SyntaxDocumentClient {
   send(request: TreeSitterClientRequest): void;
 }
 
+export type MonacoSyntaxOpenDocumentSnapshot = Extract<
+  TreeSitterClientRequest,
+  { type: "OpenDocument" }
+>;
+
 export interface MonacoSyntaxDocumentBindingOptions {
   model: Monaco.editor.ITextModel;
   client: SyntaxDocumentClient;
@@ -114,6 +119,38 @@ export class MonacoSyntaxDocumentBinding {
     return this.stateValue;
   }
 
+  get openDocumentSnapshot(): MonacoSyntaxOpenDocumentSnapshot {
+    return {
+      type: "OpenDocument",
+      sessionId: this.sessionIdValue,
+      documentUri: this.documentUri,
+      documentVersion: this.model.getVersionId(),
+      languageId: this.model.getLanguageId(),
+      text: this.model.getValue(),
+    };
+  }
+
+  restore(): Promise<ParseResult> {
+    if (this.disposed) {
+      return Promise.reject(new Error("Cannot restore a disposed Monaco model binding."));
+    }
+
+    this.documentVersionValue = this.model.getVersionId();
+    this.languageIdValue = this.model.getLanguageId();
+    this.parseTimeMsValue = undefined;
+    this.hasErrorsValue = undefined;
+    this.stateValue = "opening";
+    this.publishState();
+
+    const sessionId = this.sessionIdValue;
+    return this.sendParseRequest(this.createOpenRequest(), sessionId, "open").then((response) => {
+      if (response.type !== "ParseResult") {
+        throw new Error(`Unexpected ${response.type} response while restoring a Monaco model.`);
+      }
+      return response;
+    });
+  }
+
   dispose(): void {
     if (this.disposed) {
       return;
@@ -131,18 +168,18 @@ export class MonacoSyntaxDocumentBinding {
 
   private openCurrentSession(): void {
     const sessionId = this.sessionIdValue;
-    this.sendParseRequest(
-      {
-        type: "OpenDocument",
-        sessionId,
-        documentUri: this.documentUri,
-        documentVersion: this.documentVersionValue,
-        languageId: this.languageIdValue,
-        text: this.model.getValue(),
-      },
-      sessionId,
-      "open",
-    );
+    void this.sendParseRequest(this.createOpenRequest(), sessionId, "open").catch(() => undefined);
+  }
+
+  private createOpenRequest(): MonacoSyntaxOpenDocumentSnapshot {
+    return {
+      type: "OpenDocument",
+      sessionId: this.sessionIdValue,
+      documentUri: this.documentUri,
+      documentVersion: this.documentVersionValue,
+      languageId: this.languageIdValue,
+      text: this.model.getValue(),
+    };
   }
 
   private handleContentChange(event: Monaco.editor.IModelContentChangedEvent): void {
@@ -159,7 +196,7 @@ export class MonacoSyntaxDocumentBinding {
       return;
     }
 
-    this.sendParseRequest(
+    void this.sendParseRequest(
       {
         type: "ApplyChanges",
         sessionId,
@@ -174,7 +211,7 @@ export class MonacoSyntaxDocumentBinding {
       },
       sessionId,
       "incremental",
-    );
+    ).catch(() => undefined);
   }
 
   private handleLanguageChange(): void {
@@ -197,7 +234,7 @@ export class MonacoSyntaxDocumentBinding {
 
   private sendCurrentSnapshot(sessionId: string, requestKind: "replace" | "resync"): void {
     this.documentVersionValue = this.model.getVersionId();
-    this.sendParseRequest(
+    void this.sendParseRequest(
       {
         type: "ReplaceDocument",
         sessionId,
@@ -207,25 +244,31 @@ export class MonacoSyntaxDocumentBinding {
       },
       sessionId,
       requestKind,
-    );
+    ).catch(() => undefined);
   }
 
   private sendParseRequest(
     request: TreeSitterClientRequest,
     sessionId: string,
     requestKind: "open" | "incremental" | "replace" | "resync",
-  ): void {
+  ): Promise<WorkerResponse> {
     let responsePromise: Promise<WorkerResponse>;
     try {
       responsePromise = this.client.request(request);
     } catch (error: unknown) {
       this.handleRequestError(error, sessionId, requestKind);
-      return;
+      return Promise.reject(error);
     }
 
-    void responsePromise
-      .then((response) => this.handleResponse(response, sessionId))
-      .catch((error: unknown) => this.handleRequestError(error, sessionId, requestKind));
+    return responsePromise
+      .then((response) => {
+        this.handleResponse(response, sessionId);
+        return response;
+      })
+      .catch((error: unknown) => {
+        this.handleRequestError(error, sessionId, requestKind);
+        throw error;
+      });
   }
 
   private handleResponse(response: WorkerResponse, sessionId: string): void {

@@ -130,6 +130,22 @@ describe("TreeSitterClient", () => {
     expect(client.pendingCount).toBe(0);
   });
 
+  it("replaces its Worker and rejects requests from the previous generation", async () => {
+    const firstWorker = new FakeWorker();
+    const secondWorker = new FakeWorker();
+    const client = new TreeSitterClient(firstWorker, 4);
+    const pending = client.request(request());
+
+    client.replaceWorker(secondWorker, 5);
+
+    await expect(pending).rejects.toMatchObject({ code: "WORKER_RESTARTED" });
+    expect(client.pendingCount).toBe(0);
+    const next = client.request(request(2));
+    expect(secondWorker.posted.at(-1)).toMatchObject({ workerGeneration: 5, requestId: 2 });
+    secondWorker.emitMessage({ ...result(5, 2), requestId: 2 });
+    await expect(next).resolves.toMatchObject({ documentVersion: 2 });
+  });
+
   it("drops stale generation, session, URI, and version results", async () => {
     const worker = new FakeWorker();
     const client = new TreeSitterClient(worker, 4);
