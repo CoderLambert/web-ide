@@ -105,6 +105,31 @@ describe("TreeSitterClient", () => {
     expect(client.pendingCount).toBe(0);
   });
 
+  it("sends no-response document closes without creating a pending request", () => {
+    const worker = new FakeWorker();
+    const client = new TreeSitterClient(worker, 4);
+
+    client.send({
+      type: "CloseDocument",
+      sessionId: "session-1",
+      documentUri: "opaque-document-id",
+      documentVersion: 1,
+    });
+
+    expect(worker.posted).toEqual([
+      {
+        type: "CloseDocument",
+        protocolVersion: PROTOCOL_VERSION,
+        workerGeneration: 4,
+        requestId: 1,
+        sessionId: "session-1",
+        documentUri: "opaque-document-id",
+        documentVersion: 1,
+      },
+    ]);
+    expect(client.pendingCount).toBe(0);
+  });
+
   it("drops stale generation, session, URI, and version results", async () => {
     const worker = new FakeWorker();
     const client = new TreeSitterClient(worker, 4);

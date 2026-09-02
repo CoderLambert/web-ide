@@ -124,29 +124,14 @@ export class TreeSitterClient {
   request(request: TreeSitterClientRequest): Promise<WorkerResponse> {
     this.assertUsable();
 
-    const requestId = this.nextRequestId;
-    this.nextRequestId += 1;
-    const message = {
-      ...request,
-      protocolVersion: PROTOCOL_VERSION,
-      workerGeneration: this.generationValue,
-      requestId,
-    } as WorkerRequest;
-
     let decodedRequest: WorkerRequest;
     try {
-      const decoded = decodeWorkerMessage(message);
-      if (!isWorkerRequest(decoded)) {
-        throw new ProtocolDecodeError(
-          "INVALID_MESSAGE",
-          `Message type "${decoded.type}" is not a Worker request.`,
-        );
-      }
-      decodedRequest = decoded;
+      decodedRequest = this.prepareRequest(request);
     } catch (error: unknown) {
       return Promise.reject(error);
     }
 
+    const requestId = decodedRequest.requestId;
     const promise = new Promise<WorkerResponse>((resolve, reject) => {
       this.pending.set(requestId, {
         requestId,
@@ -160,19 +145,19 @@ export class TreeSitterClient {
     });
 
     try {
-      this.worker.postMessage(decodedRequest);
+      this.postRequest(decodedRequest);
     } catch (error: unknown) {
       this.pending.delete(requestId);
-      return Promise.reject(
-        new TreeSitterClientError(
-          "POST_MESSAGE_FAILED",
-          `Failed to post request ${requestId}: ${errorMessage(error)}`,
-          { cause: error },
-        ),
-      );
+      return Promise.reject(error);
     }
 
     return promise;
+  }
+
+  /** Send a request that intentionally has no response, such as CloseDocument. */
+  send(request: TreeSitterClientRequest): void {
+    this.assertUsable();
+    this.postRequest(this.prepareRequest(request));
   }
 
   setWorkerGeneration(workerGeneration: number): void {
@@ -272,6 +257,37 @@ export class TreeSitterClient {
     this.pending.clear();
     for (const request of pending) {
       request.reject(error);
+    }
+  }
+
+  private prepareRequest(request: TreeSitterClientRequest): WorkerRequest {
+    const requestId = this.nextRequestId;
+    this.nextRequestId += 1;
+    const message = {
+      ...request,
+      protocolVersion: PROTOCOL_VERSION,
+      workerGeneration: this.generationValue,
+      requestId,
+    } as WorkerRequest;
+    const decoded = decodeWorkerMessage(message);
+    if (!isWorkerRequest(decoded)) {
+      throw new ProtocolDecodeError(
+        "INVALID_MESSAGE",
+        `Message type "${decoded.type}" is not a Worker request.`,
+      );
+    }
+    return decoded;
+  }
+
+  private postRequest(request: WorkerRequest): void {
+    try {
+      this.worker.postMessage(request);
+    } catch (error: unknown) {
+      throw new TreeSitterClientError(
+        "POST_MESSAGE_FAILED",
+        `Failed to post request ${request.requestId}: ${errorMessage(error)}`,
+        { cause: error },
+      );
     }
   }
 
