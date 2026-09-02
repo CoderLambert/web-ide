@@ -14,6 +14,7 @@
     "preview": "vp preview",
     "start:s0:lsp-mock": "node scripts/s0-lsp-jsonrpc-server.mjs",
     "test:unit": "vp test run tests/unit",
+    "bench:m1": "node scripts/bench-m1.mjs",
     "typecheck": "tsc --noEmit",
     "lint": "vp lint",
     "check": "vp check",
