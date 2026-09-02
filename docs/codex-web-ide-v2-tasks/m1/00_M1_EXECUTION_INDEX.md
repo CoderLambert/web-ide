@@ -6,11 +6,11 @@
 
 ```text
 M1-01 Registry/Test Foundation ─┐
-                               ├→ M1-03 Runtime → M1-04 Sessions → M1-05 WorkerHost
-M1-02 Protocol ─────────────────┘                              │
-                                                              ├→ M1-06 Supervisor Core
-M1-02 Protocol ─→ M1-07 Client ────────────────────────────────┘
-M1-02 Protocol ─→ M1-08 EditCodec
+                               ├→ M1-03 Runtime → M1-04 Sessions → M1-05 WorkerHost → M1-06 Supervisor
+M1-02 Protocol ─────────────────┘                                                        │
+       │                                                                                ↓
+       ├────────────────────────────────────────────────────────────────────────────→ M1-07 Client
+       └→ M1-08 EditCodec
 
 M1-04 + M1-05 + M1-08
         ↓
@@ -19,14 +19,12 @@ M1-09 Incremental Parse
 M1-10 Full Resync
         ↓
 M1-11 Monaco Binding
-        ↓
-M1-12 Worker Recovery
-        ↓
-M1-13 AST Inspector
-        ↓
-M1-14 Integration/Performance Gate
-        ↓
-M1 REVIEW
+        ├→ M1-12 Worker Recovery ─┐
+        └→ M1-13 AST Inspector ───┤
+                                  ↓
+                         M1-14 Final Gate
+                                  ↓
+                               M1 REVIEW
 ```
 
 ## 文档
@@ -48,15 +46,18 @@ M1 REVIEW
 ```text
 M1-01 || M1-02
 M1-04 tests || M1-08 EditCodec
-M1-06 || M1-08
+M1-06 Supervisor Core || M1-08 EditCodec
+M1-12 Recovery || M1-13 Inspector（M1-11 PASS 后）
 ```
 
 禁止并行：
 
 ```text
 Protocol 未 PASS → Client/Runtime
+DocumentSession 未 PASS → Incremental Parse
 Incremental 未 PASS → Full Resync
-Binding 未 PASS → Recovery
+Full Resync 未 PASS → Monaco Binding
+Monaco Binding 未 PASS → Recovery
 ```
 
 ## 每个 Task 的完成规则
