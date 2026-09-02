@@ -10,10 +10,6 @@ dist-ssr
 .output
 .vinxi
 __unconfig*
-todos.json
-mcp-todos.json
-*storybook.log
-storybook-static
 playwright-report/
 test-results/
 !.vscode/

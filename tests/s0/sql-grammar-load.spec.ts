@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 
 import { expect, test } from "playwright/test";
 
-const baseUrl = (process.env.S0_BASE_URL ?? "http://localhost:3000").replace(/\/$/, "");
+const baseUrl = (process.env.S0_BASE_URL ?? "http://127.0.0.1:3000").replace(/\/$/, "");
 const grammarPath = "/languages/sql/tree-sitter-sql.wasm";
 const grammarLock: unknown = JSON.parse(
   readFileSync(new URL("../../scripts/sql-grammar.lock.json", import.meta.url), "utf8"),

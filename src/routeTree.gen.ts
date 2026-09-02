@@ -8,115 +8,79 @@
 // You should NOT make any changes in this file as it will be overwritten.
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
-import { Route as rootRouteImport } from "./routes/__root";
-import { Route as IndexRouteImport } from "./routes/index";
-import { Route as IdeRouteImport } from "./routes/ide";
-import { Route as McpRouteImport } from "./routes/mcp";
-import { Route as ApiTrpcSplatRouteImport } from "./routes/api.trpc.$";
+import { Route as rootRouteImport } from './routes/__root'
+import { Route as IndexRouteImport } from './routes/index'
+import { Route as IdeRouteImport } from './routes/ide'
 
 const IndexRoute = IndexRouteImport.update({
-  id: "/",
-  path: "/",
+  id: '/',
+  path: '/',
   getParentRoute: () => rootRouteImport,
-} as any);
+} as any)
 const IdeRoute = IdeRouteImport.update({
-  id: "/ide",
-  path: "/ide",
+  id: '/ide',
+  path: '/ide',
   getParentRoute: () => rootRouteImport,
-} as any);
-const McpRoute = McpRouteImport.update({
-  id: "/mcp",
-  path: "/mcp",
-  getParentRoute: () => rootRouteImport,
-} as any);
-const ApiTrpcSplatRoute = ApiTrpcSplatRouteImport.update({
-  id: "/api/trpc/$",
-  path: "/api/trpc/$",
-  getParentRoute: () => rootRouteImport,
-} as any);
+} as any)
 
 export interface FileRoutesByFullPath {
-  "/": typeof IndexRoute;
-  "/ide": typeof IdeRoute;
-  "/mcp": typeof McpRoute;
-  "/api/trpc/$": typeof ApiTrpcSplatRoute;
+  '/': typeof IndexRoute
+  '/ide': typeof IdeRoute
 }
 export interface FileRoutesByTo {
-  "/": typeof IndexRoute;
-  "/ide": typeof IdeRoute;
-  "/mcp": typeof McpRoute;
-  "/api/trpc/$": typeof ApiTrpcSplatRoute;
+  '/': typeof IndexRoute
+  '/ide': typeof IdeRoute
 }
 export interface FileRoutesById {
-  __root__: typeof rootRouteImport;
-  "/": typeof IndexRoute;
-  "/ide": typeof IdeRoute;
-  "/mcp": typeof McpRoute;
-  "/api/trpc/$": typeof ApiTrpcSplatRoute;
+  __root__: typeof rootRouteImport
+  '/': typeof IndexRoute
+  '/ide': typeof IdeRoute
 }
 export interface FileRouteTypes {
-  fileRoutesByFullPath: FileRoutesByFullPath;
-  fullPaths: "/" | "/ide" | "/mcp" | "/api/trpc/$";
-  fileRoutesByTo: FileRoutesByTo;
-  to: "/" | "/ide" | "/mcp" | "/api/trpc/$";
-  id: "__root__" | "/" | "/ide" | "/mcp" | "/api/trpc/$";
-  fileRoutesById: FileRoutesById;
+  fileRoutesByFullPath: FileRoutesByFullPath
+  fullPaths: '/' | '/ide'
+  fileRoutesByTo: FileRoutesByTo
+  to: '/' | '/ide'
+  id: '__root__' | '/' | '/ide'
+  fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
-  IndexRoute: typeof IndexRoute;
-  IdeRoute: typeof IdeRoute;
-  McpRoute: typeof McpRoute;
-  ApiTrpcSplatRoute: typeof ApiTrpcSplatRoute;
+  IndexRoute: typeof IndexRoute
+  IdeRoute: typeof IdeRoute
 }
 
-declare module "@tanstack/react-router" {
+declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
-    "/": {
-      id: "/";
-      path: "/";
-      fullPath: "/";
-      preLoaderRoute: typeof IndexRouteImport;
-      parentRoute: typeof rootRouteImport;
-    };
-    "/ide": {
-      id: "/ide";
-      path: "/ide";
-      fullPath: "/ide";
-      preLoaderRoute: typeof IdeRouteImport;
-      parentRoute: typeof rootRouteImport;
-    };
-    "/mcp": {
-      id: "/mcp";
-      path: "/mcp";
-      fullPath: "/mcp";
-      preLoaderRoute: typeof McpRouteImport;
-      parentRoute: typeof rootRouteImport;
-    };
-    "/api/trpc/$": {
-      id: "/api/trpc/$";
-      path: "/api/trpc/$";
-      fullPath: "/api/trpc/$";
-      preLoaderRoute: typeof ApiTrpcSplatRouteImport;
-      parentRoute: typeof rootRouteImport;
-    };
+    '/': {
+      id: '/'
+      path: '/'
+      fullPath: '/'
+      preLoaderRoute: typeof IndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/ide': {
+      id: '/ide'
+      path: '/ide'
+      fullPath: '/ide'
+      preLoaderRoute: typeof IdeRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   IdeRoute: IdeRoute,
-  McpRoute: McpRoute,
-  ApiTrpcSplatRoute: ApiTrpcSplatRoute,
-};
+}
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
-  ._addFileTypes<FileRouteTypes>();
+  ._addFileTypes<FileRouteTypes>()
 
-import type { getRouter } from "./router.tsx";
-import type { createStart } from "@tanstack/react-start";
-declare module "@tanstack/react-start" {
+import type { getRouter } from './router.tsx'
+import type { createStart } from '@tanstack/react-start'
+declare module '@tanstack/react-start' {
   interface Register {
-    ssr: true;
-    router: Awaited<ReturnType<typeof getRouter>>;
+    ssr: true
+    router: Awaited<ReturnType<typeof getRouter>>
   }
 }

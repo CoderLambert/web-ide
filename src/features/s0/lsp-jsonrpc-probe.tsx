@@ -9,6 +9,7 @@ type ProbeState = "idle" | "connecting" | "ready" | "disconnecting" | "disposed"
 interface ActiveSession {
   languageClient: LanguageClientWrapper;
   webSocket: WebSocket;
+  disposePromise?: Promise<void>;
 }
 
 interface EchoResult {
@@ -23,24 +24,32 @@ function errorMessage(error: unknown) {
 }
 
 function initializeMonacoVscodeApi() {
-  vscodeApiInitialization ??= import("monaco-languageclient/vscodeApiWrapper").then(
-    async ({ MonacoVscodeApiWrapper }) => {
-      const api = new MonacoVscodeApiWrapper({
-        $type: "classic",
-        advanced: { loadExtensionServices: false },
-        viewsConfig: { $type: "EditorService" },
-        workspaceConfig: {
-          workspaceProvider: {
-            open: async () => false,
-            trusted: true,
-            workspace: undefined,
+  if (vscodeApiInitialization === undefined) {
+    const initialization = import("monaco-languageclient/vscodeApiWrapper").then(
+      async ({ MonacoVscodeApiWrapper }) => {
+        const api = new MonacoVscodeApiWrapper({
+          $type: "classic",
+          advanced: { loadExtensionServices: false },
+          viewsConfig: { $type: "EditorService" },
+          workspaceConfig: {
+            workspaceProvider: {
+              open: async () => false,
+              trusted: true,
+              workspace: undefined,
+            },
           },
-        },
-      });
+        });
 
-      await api.start({ caller: "S0-06 LSP compatibility probe" });
-    },
-  );
+        await api.start({ caller: "S0-06 LSP compatibility probe" });
+      },
+    );
+
+    vscodeApiInitialization = initialization.catch((error: unknown) => {
+      // A failed first start must not poison later reconnect attempts.
+      vscodeApiInitialization = undefined;
+      throw error;
+    });
+  }
 
   return vscodeApiInitialization;
 }
@@ -70,16 +79,32 @@ function waitForSocketClose(webSocket: WebSocket) {
   });
 }
 
-async function disposeSession(session: ActiveSession) {
+async function disposeSessionResources(session: ActiveSession) {
   const closed = waitForSocketClose(session.webSocket);
+  let disposeFailed = false;
+  let disposeError: unknown;
 
-  await session.languageClient.dispose();
+  try {
+    await session.languageClient.dispose();
+  } catch (error: unknown) {
+    disposeFailed = true;
+    disposeError = error;
+  }
 
   if (session.webSocket.readyState < WebSocket.CLOSING) {
     session.webSocket.close(1000, "LSP compatibility probe disposed");
   }
 
   await closed;
+
+  if (disposeFailed) {
+    throw disposeError;
+  }
+}
+
+function disposeSession(session: ActiveSession) {
+  session.disposePromise ??= disposeSessionResources(session);
+  return session.disposePromise;
 }
 
 function isEchoResult(value: unknown): value is EchoResult {
@@ -110,7 +135,9 @@ export function LspJsonRpcProbe() {
       sessionRef.current = null;
 
       if (session !== null) {
-        void disposeSession(session);
+        void disposeSession(session).catch((error: unknown) => {
+          console.error("Failed to dispose the S0 LSP JSON-RPC probe during unmount", error);
+        });
       }
     };
   }, []);

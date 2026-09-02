@@ -3,11 +3,29 @@ import { fileURLToPath } from "node:url";
 
 import { expect, test } from "playwright/test";
 
-const baseUrl = (process.env.S0_BASE_URL ?? "http://localhost:3000").replace(/\/$/, "");
+const baseUrl = (process.env.S0_BASE_URL ?? "http://127.0.0.1:3000").replace(/\/$/, "");
 const workspaceRoot = fileURLToPath(new URL("../..", import.meta.url));
 const serverPath = fileURLToPath(
   new URL("../../scripts/s0-lsp-jsonrpc-server.mjs", import.meta.url),
 );
+
+async function navigateClientSide(page: import("playwright/test").Page, pathname: string) {
+  await page.evaluate((nextPathname) => {
+    const key = crypto.randomUUID();
+    const currentIndex = history.state?.__TSR_index ?? 0;
+
+    history.pushState(
+      {
+        ...history.state,
+        __TSR_index: currentIndex + 1,
+        __TSR_key: key,
+        key,
+      },
+      "",
+      nextPathname,
+    );
+  }, pathname);
+}
 
 let mockServer: ChildProcessWithoutNullStreams;
 let mockServerPort: string;
@@ -118,8 +136,9 @@ test("connects, initializes, reconnects, and disposes the Monaco LSP client", as
   await expect(page.locator('[data-testid="lsp-connection-id"]')).toHaveText("2");
   expect(Number(await probe.getAttribute("data-connected-count"))).toBe(2);
 
-  await toggle.click();
-  await expect(status).toHaveText("disposed");
+  await navigateClientSide(page, "/");
+  await expect(page).toHaveURL(`${baseUrl}/`);
+  await expect(probe).toHaveCount(0);
   await expect.poll(() => closedSockets).toBe(2);
 
   expect(socketCount).toBe(2);

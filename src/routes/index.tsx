@@ -4,11 +4,16 @@ export const Route = createFileRoute("/")({ component: Home });
 
 function Home() {
   return (
-    <div className="p-8">
-      <h1 className="text-4xl font-bold">Welcome to TanStack Start</h1>
-      <p className="mt-4 text-lg">
-        Edit <code>src/routes/index.tsx</code> to get started.
+    <main className="landing-page">
+      <p className="eyebrow">CoderLambert / web-ide</p>
+      <h1>Runtime compatibility workspace</h1>
+      <p>
+        This repository currently freezes and validates the Monaco, Tree-sitter, SQL grammar WASM,
+        and minimal LSP runtime stack.
       </p>
-    </div>
+      <a className="primary-link" href="/ide">
+        Open the S0 compatibility probes
+      </a>
+    </main>
   );
 }

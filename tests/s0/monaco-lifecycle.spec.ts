@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "playwright/test";
 
-const baseUrl = (process.env.S0_BASE_URL ?? "http://localhost:3000").replace(/\/$/, "");
+const baseUrl = (process.env.S0_BASE_URL ?? "http://127.0.0.1:3000").replace(/\/$/, "");
 
 async function navigateClientSide(page: Page, pathname: string) {
   await page.evaluate((nextPathname) => {

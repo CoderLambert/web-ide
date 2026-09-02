@@ -1,6 +1,6 @@
 import { expect, test } from "playwright/test";
 
-const baseUrl = (process.env.S0_BASE_URL ?? "http://localhost:3000").replace(/\/$/, "");
+const baseUrl = (process.env.S0_BASE_URL ?? "http://127.0.0.1:3000").replace(/\/$/, "");
 
 test("initializes web-tree-sitter in a disposable module Worker", async ({ page }) => {
   const consoleErrors: string[] = [];
