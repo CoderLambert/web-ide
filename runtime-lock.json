@@ -53,6 +53,7 @@
       "pnpm test",
       "pnpm build",
       "pnpm preview",
+      "pnpm verify:sql-grammar",
       "pnpm verify:s0"
     ],
     "results": {
@@ -62,7 +63,8 @@
       "tests": "PASS: 5 Playwright tests",
       "productionBuild": "PASS",
       "productionPreview": "PASS",
-      "productionE2E": "PASS: 5 Playwright tests"
+      "productionE2E": "PASS: 5 Playwright tests",
+      "sqlGrammarReproducibleBuild": "PASS: pinned revision and artifact unchanged"
     },
     "coverage": [
       "Monaco create/dispose/remount",
@@ -74,7 +76,7 @@
       "zero uncaught page errors"
     ],
     "notes": [
-      "Emscripten 4.0.4 and the SQL WASM build were validated when S0-04 produced the pinned artifact; emcc is not on the current shell PATH.",
+      "The SQL grammar rebuild was rerun with Emscripten 4.0.4 from an isolated temporary emsdk; emcc matched the lock and the generated artifact remained byte-identical. The default shell PATH was not modified.",
       "The production build emits third-party web-tree-sitter externalization/eval and large-chunk warnings; no build or browser errors occur."
     ]
   }

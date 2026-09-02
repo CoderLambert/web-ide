@@ -41,6 +41,12 @@ pnpm preview
 
 The LSP test starts its own disposable mock server. The SQL grammar artifact is produced from the pinned revision in `scripts/sql-grammar.lock.json`; rebuilding it requires the locked Tree-sitter CLI and Emscripten versions.
 
+When changing the SQL grammar revision or build toolchain, verify a byte-identical rebuild with:
+
+```bash
+pnpm verify:sql-grammar
+```
+
 ## Runtime freeze
 
 The verified versions, SQL grammar revision/ABI/SHA-256, LSP dependencies, commands, and gate results are recorded in [runtime-lock.json](runtime-lock.json) and [ADR-001-runtime-stack.md](docs/adr/ADR-001-runtime-stack.md).

@@ -43,12 +43,13 @@ pnpm check
 pnpm test
 pnpm build
 pnpm preview
+pnpm verify:sql-grammar
 pnpm verify:s0
 ```
 
 `pnpm verify:s0` runs the frozen install, typecheck, check, production build, starts a production preview, and runs the full S0 browser suite against that preview. The existing production build warning from `web-tree-sitter` is third-party bundler output; it does not fail the build or runtime gate.
 
-The SQL grammar build itself was previously validated with Emscripten `4.0.4` during S0-04 and is locked by the artifact hash. The current verification shell does not expose `emcc`, so S0-07 verifies the committed artifact's path, content type, size, and SHA-256 rather than regenerating it.
+`pnpm verify:sql-grammar` was rerun with Emscripten `4.0.4` from an isolated temporary emsdk. `emcc --version` matched the lock, and the generated SQL grammar matched the committed size and SHA-256; the verification did not modify the system shell environment.
 
 ## Consequences
 
