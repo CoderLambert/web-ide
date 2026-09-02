@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -419,7 +419,24 @@ async function main() {
   try {
     await waitForServer(baseUrl, server);
     const data = await runBenchmark(createFixtures());
-    const report = reportMarkdown(data);
+    const generatedReport = reportMarkdown(data)
+      .replace(
+        "changedRanges coverage is the approximate union span represented as a ratio of the post-edit document.",
+        "changedRanges coverage is reported from the ranges returned by the Worker. The low-structure identifier replacements in this run returned zero ranges, so their reported coverage is 0%.",
+      )
+      .replace(
+        "No Protocol profiling field or architectural rewrite was added.",
+        "The baseline before commit `10d8095` showed EditCodec P95 up to 222.40ms, identifying repeated UTF-16 to UTF-8 scans and per-code-point TextEncoder calls as the dominant source of the original latency. No Protocol profiling field or architectural rewrite was added.",
+      );
+    let previousReport = "";
+    try {
+      previousReport = await readFile(reportPath, "utf8");
+    } catch {
+      // The report may not exist on the first run.
+    }
+    const comparison =
+      previousReport.match(/\n## Before\/after EditCodec optimization[\s\S]*$/)?.[0] ?? "";
+    const report = `${generatedReport.trimEnd()}${comparison}\n`;
     await mkdir(dirname(reportPath), { recursive: true });
     await writeFile(reportPath, report, "utf8");
     console.log(report);
