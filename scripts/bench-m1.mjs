@@ -436,7 +436,7 @@ async function main() {
     }
     const comparison =
       previousReport.match(/\n## Before\/after EditCodec optimization[\s\S]*$/)?.[0] ?? "";
-    const report = `${generatedReport.trimEnd()}${comparison}\n`;
+    const report = `${generatedReport.trimEnd()}${comparison === "" ? "" : `\n${comparison}`}\n`;
     await mkdir(dirname(reportPath), { recursive: true });
     await writeFile(reportPath, report, "utf8");
     console.log(report);
