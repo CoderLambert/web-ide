@@ -4,6 +4,7 @@ import {
   SelectionCoordinator,
   createSelectionRangeProvider,
 } from "../../../src/editor/monaco/selection-provider";
+import { DocumentSyntaxCapabilityRegistry } from "../../../src/editor/monaco/document-capability-registry";
 import type { SyntaxSelectionPath } from "../../../src/syntax/types";
 import type {
   SelectionRangesResult,
@@ -94,9 +95,18 @@ describe("SelectionCoordinator", () => {
       documentUri: "opaque://query.sql",
       getDocumentVersion: () => version,
     });
-    const provider = createSelectionRangeProvider(coordinator);
+    const registry = new DocumentSyntaxCapabilityRegistry();
+    registry.register("opaque://query.sql", {
+      highlight: {} as never,
+      folding: {} as never,
+      selection: coordinator,
+    });
+    const provider = createSelectionRangeProvider(registry);
     const resultPromise = provider.provideSelectionRanges(
-      { getVersionId: () => version } as never,
+      {
+        getVersionId: () => version,
+        uri: { toString: () => "opaque://query.sql" },
+      } as never,
       [{ lineNumber: 1, column: 2 }] as never,
       {} as never,
     );

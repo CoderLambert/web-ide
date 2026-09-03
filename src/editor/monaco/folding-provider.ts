@@ -3,6 +3,7 @@ import type * as Monaco from "monaco-editor/esm/vs/editor/editor.api.js";
 import type { SyntaxFoldingRange } from "../../syntax/types";
 import type { TreeSitterClientRequest } from "../../syntax/tree-sitter/client";
 import type { FoldingRangesResult, WorkerResponse } from "../../syntax/tree-sitter/protocol";
+import { DocumentSyntaxCapabilityRegistry } from "./document-capability-registry";
 
 export interface FoldingCapabilityClient {
   request(request: TreeSitterClientRequest): Promise<WorkerResponse>;
@@ -142,14 +143,30 @@ export class FoldingCoordinator {
 
 export function createFoldingRangeProvider(
   monaco: typeof Monaco,
-  coordinator: FoldingCoordinator,
+  registry: DocumentSyntaxCapabilityRegistry,
 ): Monaco.languages.FoldingRangeProvider & { dispose(): void } {
   const emitter = new monaco.Emitter<Monaco.languages.FoldingRangeProvider & { dispose(): void }>();
-  const listener = coordinator.onDidChange(() => emitter.fire(provider));
+  const listeners = new Map<string, { dispose(): void }>();
+  const syncDocument = (uri: string, capabilities: { folding: FoldingCoordinator } | undefined) => {
+    listeners.get(uri)?.dispose();
+    listeners.delete(uri);
+    if (capabilities !== undefined) {
+      listeners.set(
+        uri,
+        capabilities.folding.onDidChange(() => emitter.fire(provider)),
+      );
+    }
+  };
+  registry.forEach(syncDocument);
+  const registryListener = registry.onDidChange(syncDocument);
   const provider: Monaco.languages.FoldingRangeProvider & { dispose(): void } = {
     onDidChange: emitter.event,
     provideFoldingRanges: (model) => {
       const version = model.getVersionId();
+      const coordinator = registry.get(model.uri.toString())?.folding;
+      if (coordinator === undefined) {
+        return [];
+      }
       coordinator.requestLatest(version);
       return coordinator.getRanges(version).map(({ range }) => ({
         start: range.start.line + 1,
@@ -158,7 +175,11 @@ export function createFoldingRangeProvider(
       }));
     },
     dispose: () => {
-      listener.dispose();
+      registryListener.dispose();
+      for (const listener of listeners.values()) {
+        listener.dispose();
+      }
+      listeners.clear();
       emitter.dispose();
     },
   };
@@ -168,9 +189,9 @@ export function createFoldingRangeProvider(
 export function registerFoldingRangeProvider(
   monaco: typeof Monaco,
   languageId: string,
-  coordinator: FoldingCoordinator,
+  registry: DocumentSyntaxCapabilityRegistry,
 ): Monaco.IDisposable {
-  const provider = createFoldingRangeProvider(monaco, coordinator);
+  const provider = createFoldingRangeProvider(monaco, registry);
   const registration = monaco.languages.registerFoldingRangeProvider(languageId, provider);
   return {
     dispose: () => {

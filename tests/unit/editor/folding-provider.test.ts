@@ -4,6 +4,7 @@ import {
   FoldingCoordinator,
   createFoldingRangeProvider,
 } from "../../../src/editor/monaco/folding-provider";
+import { DocumentSyntaxCapabilityRegistry } from "../../../src/editor/monaco/document-capability-registry";
 import type { SyntaxFoldingRange } from "../../../src/syntax/types";
 import type { FoldingRangesResult, WorkerResponse } from "../../../src/syntax/tree-sitter/protocol";
 import type { TreeSitterClientRequest } from "../../../src/syntax/tree-sitter/client";
@@ -104,7 +105,13 @@ describe("FoldingCoordinator", () => {
       getDocumentVersion: () => version,
     });
     const monaco = { Emitter: FakeEmitter } as never;
-    const provider = createFoldingRangeProvider(monaco, coordinator);
+    const registry = new DocumentSyntaxCapabilityRegistry();
+    registry.register("opaque://query.sql", {
+      highlight: {} as never,
+      folding: coordinator,
+      selection: {} as never,
+    });
+    const provider = createFoldingRangeProvider(monaco, registry);
     coordinator.requestLatest();
     pending.resolve(
       result(1, [
@@ -120,7 +127,10 @@ describe("FoldingCoordinator", () => {
 
     expect(
       provider.provideFoldingRanges(
-        { getVersionId: () => version } as never,
+        {
+          getVersionId: () => version,
+          uri: { toString: () => "opaque://query.sql" },
+        } as never,
         {} as never,
         {} as never,
       ),

@@ -4,6 +4,7 @@ import {
   HighlightCoordinator,
   createSemanticHighlightProvider,
 } from "../../../src/editor/monaco/highlight-coordinator";
+import { DocumentSyntaxCapabilityRegistry } from "../../../src/editor/monaco/document-capability-registry";
 import { SYNTAX_TOKEN_TYPES, type SyntaxToken } from "../../../src/syntax/types";
 import type { HighlightsResult, WorkerResponse } from "../../../src/syntax/tree-sitter/protocol";
 import type { TreeSitterClientRequest } from "../../../src/syntax/tree-sitter/client";
@@ -69,6 +70,16 @@ function createClient() {
 
 function flushPromises(): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, 0));
+}
+
+function registryFor(coordinator: HighlightCoordinator): DocumentSyntaxCapabilityRegistry {
+  const registry = new DocumentSyntaxCapabilityRegistry();
+  registry.register("opaque://query.sql", {
+    highlight: coordinator,
+    folding: {} as never,
+    selection: {} as never,
+  });
+  return registry;
 }
 
 describe("HighlightCoordinator", () => {
@@ -152,7 +163,7 @@ describe("HighlightCoordinator", () => {
       getDocumentVersion: () => version,
     });
     const monaco = { Emitter: FakeEmitter } as never;
-    const provider = createSemanticHighlightProvider(monaco, coordinator);
+    const provider = createSemanticHighlightProvider(monaco, registryFor(coordinator));
     coordinator.requestLatest();
     client.deferred[0]?.resolve(result(1, [token]));
     await flushPromises();
@@ -160,6 +171,7 @@ describe("HighlightCoordinator", () => {
     const semanticTokens = provider.provideDocumentSemanticTokens(
       {
         getVersionId: () => version,
+        uri: { toString: () => "opaque://query.sql" },
         getLineCount: () => 1,
         getLineLength: () => 6,
       } as never,
@@ -184,7 +196,7 @@ describe("HighlightCoordinator", () => {
       getDocumentVersion: () => version,
     });
     const monaco = { Emitter: FakeEmitter } as never;
-    const provider = createSemanticHighlightProvider(monaco, coordinator);
+    const provider = createSemanticHighlightProvider(monaco, registryFor(coordinator));
     const commentType = SYNTAX_TOKEN_TYPES.indexOf("comment");
     const token: SyntaxToken = {
       range: {
@@ -200,6 +212,7 @@ describe("HighlightCoordinator", () => {
     const semanticTokens = provider.provideDocumentSemanticTokens(
       {
         getVersionId: () => version,
+        uri: { toString: () => "opaque://query.sql" },
         getLineCount: () => 3,
         getLineLength: (lineNumber: number) => [6, 4, 5][lineNumber - 1] ?? 0,
       } as never,

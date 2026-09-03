@@ -42,61 +42,17 @@ function isSurrogateSplit(text: string, offset: number): boolean {
 }
 
 interface BoundaryMetric {
-  byteIndex: number;
   position: TreeSitterPoint;
-}
-
-function utf8BytesForCodePoint(codePoint: number): number {
-  if (codePoint <= 0x7f) {
-    return 1;
-  }
-  if (codePoint <= 0x7ff) {
-    return 2;
-  }
-  if (codePoint <= 0xffff) {
-    return 3;
-  }
-  return 4;
 }
 
 function measureBoundaries(text: string, offsets: readonly number[]): Map<number, BoundaryMetric> {
   const boundaries = [...new Set(offsets)].sort((left, right) => left - right);
   const metrics = new Map<number, BoundaryMetric>();
   let boundaryIndex = 0;
-  let offset = 0;
-  let byteIndex = 0;
-  let row = 0;
-  let column = 0;
 
   while (boundaryIndex < boundaries.length) {
     const boundary = boundaries[boundaryIndex];
-    while (offset < boundary) {
-      const codePoint = text.codePointAt(offset);
-      if (codePoint === undefined) {
-        invalid("Text contains an invalid code point.");
-      }
-
-      const codeUnitLength = codePoint > 0xffff ? 2 : 1;
-      if (offset + codeUnitLength > boundary) {
-        invalid("A text change boundary splits a code point.");
-      }
-
-      const byteLength = utf8BytesForCodePoint(codePoint);
-      byteIndex += byteLength;
-      if (codePoint === 0x0a) {
-        row += 1;
-        column = 0;
-      } else {
-        column += byteLength;
-      }
-      offset += codeUnitLength;
-    }
-
-    if (offset !== boundary) {
-      invalid("A text change boundary is outside the UTF-16 text boundaries.");
-    }
-
-    metrics.set(boundary, { byteIndex, position: { row, column } });
+    metrics.set(boundary, { position: positionAtOffset(text, boundary) });
     while (boundaries[boundaryIndex] === boundary) {
       boundaryIndex += 1;
     }
@@ -106,34 +62,42 @@ function measureBoundaries(text: string, offsets: readonly number[]): Map<number
 }
 
 interface ReplacementMetrics {
-  byteLength: number;
   endPosition: TreeSitterPoint;
 }
 
 function measureReplacement(start: TreeSitterPoint, text: string): ReplacementMetrics {
-  let row = start.row;
-  let column = start.column;
-  let byteLength = 0;
-
-  for (let index = 0; index < text.length;) {
-    const codePoint = text.codePointAt(index);
-    if (codePoint === undefined) {
-      invalid("Replacement text contains an invalid code point.");
-    }
-
-    const codeUnitLength = codePoint > 0xffff ? 2 : 1;
-    const currentByteLength = utf8BytesForCodePoint(codePoint);
-    byteLength += currentByteLength;
-    if (codePoint === 0x0a) {
-      row += 1;
-      column = 0;
-    } else {
-      column += currentByteLength;
-    }
-    index += codeUnitLength;
+  const lastNewline = text.lastIndexOf("\n");
+  if (lastNewline < 0) {
+    return {
+      endPosition: {
+        row: start.row,
+        column: start.column + text.length,
+      },
+    };
   }
 
-  return { byteLength, endPosition: { row, column } };
+  return {
+    endPosition: {
+      row: start.row + (text.match(/\n/g)?.length ?? 0),
+      column: text.length - lastNewline - 1,
+    },
+  };
+}
+
+function positionAtOffset(text: string, offset: number): TreeSitterPoint {
+  if (!isInteger(offset) || offset < 0 || offset > text.length) {
+    invalid("A text change boundary is outside the UTF-16 text boundaries.");
+  }
+
+  const lineStart = text.lastIndexOf("\n", offset - 1) + 1;
+  let row = 0;
+  for (let index = 0; index < lineStart; index += 1) {
+    if (text.charCodeAt(index) === 0x0a) {
+      row += 1;
+    }
+  }
+
+  return { row, column: offset - lineStart };
 }
 
 function validateChanges(text: string, changes: readonly TextChange[]): TextChange[] {
@@ -210,9 +174,9 @@ export function encodeEditTransaction(
       startPosition: startMetric.position,
       oldEndPosition: oldEndMetric.position,
       newEndPosition: replacement.endPosition,
-      startIndex: startMetric.byteIndex,
-      oldEndIndex: oldEndMetric.byteIndex,
-      newEndIndex: startMetric.byteIndex + replacement.byteLength,
+      startIndex: startOffset,
+      oldEndIndex: endOffset,
+      newEndIndex: startOffset + change.text.length,
     });
     stagedText = `${stagedText.slice(0, startOffset)}${change.text}${stagedText.slice(endOffset)}`;
   }

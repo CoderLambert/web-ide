@@ -1,15 +1,10 @@
-import type { Range, Tree } from "web-tree-sitter";
+import type { Tree } from "web-tree-sitter";
 
-import type {
-  ApplyChanges,
-  ParseResult,
-  ReplaceDocument,
-  TextPosition,
-  TextRange,
-} from "../protocol";
+import type { ApplyChanges, ParseResult, ReplaceDocument, TextRange } from "../protocol";
 import { encodeEditTransaction, EditCodecError } from "../edit-codec";
 import type { OpenDocumentInput, DocumentSession } from "./document-session";
 import { WorkerRuntime } from "./runtime";
+import { treeSitterRangeToTextRange } from "./text-range";
 
 export type DocumentManagerErrorCode =
   | "INVALID_DOCUMENT"
@@ -336,79 +331,6 @@ export class DocumentManager {
       );
     }
   }
-}
-
-const encoder = new TextEncoder();
-
-function utf8ByteLength(text: string): number {
-  return encoder.encode(text).byteLength;
-}
-
-function lineAt(text: string, row: number): string {
-  let currentRow = 0;
-  let lineStart = 0;
-  for (let index = 0; index <= text.length; index += 1) {
-    if (index === text.length || text.charCodeAt(index) === 0x0a) {
-      if (currentRow === row) {
-        return text.slice(lineStart, index);
-      }
-      currentRow += 1;
-      lineStart = index + 1;
-    }
-  }
-
-  throw new Error(`Tree-sitter returned an invalid row ${row}.`);
-}
-
-function utf8ColumnToUtf16(line: string, byteColumn: number): number {
-  if (!Number.isInteger(byteColumn) || byteColumn < 0) {
-    throw new Error(`Tree-sitter returned an invalid byte column ${byteColumn}.`);
-  }
-
-  let bytes = 0;
-  let codeUnits = 0;
-  while (codeUnits < line.length) {
-    if (bytes === byteColumn) {
-      return codeUnits;
-    }
-
-    const codePoint = line.codePointAt(codeUnits);
-    if (codePoint === undefined) {
-      break;
-    }
-    const codeUnitLength = codePoint > 0xffff ? 2 : 1;
-    bytes += utf8ByteLength(line.slice(codeUnits, codeUnits + codeUnitLength));
-    codeUnits += codeUnitLength;
-    if (bytes > byteColumn) {
-      throw new Error(`Tree-sitter returned a byte column inside a code point: ${byteColumn}.`);
-    }
-  }
-
-  if (bytes === byteColumn) {
-    return codeUnits;
-  }
-  throw new Error(`Tree-sitter returned a byte column outside the line: ${byteColumn}.`);
-}
-
-function treeSitterPositionToTextPosition(
-  text: string,
-  position: { row: number; column: number },
-): TextPosition {
-  if (!Number.isInteger(position.row) || position.row < 0) {
-    throw new Error(`Tree-sitter returned an invalid row ${position.row}.`);
-  }
-
-  return {
-    line: position.row,
-    character: utf8ColumnToUtf16(lineAt(text, position.row), position.column),
-  };
-}
-
-function treeSitterRangeToTextRange(text: string, range: Range): TextRange {
-  return {
-    start: treeSitterPositionToTextPosition(text, range.startPosition),
-    end: treeSitterPositionToTextPosition(text, range.endPosition),
-  };
 }
 
 function fullTextRange(text: string): TextRange {

@@ -6,7 +6,8 @@
 
 ### 目标
 
-冻结 UTF-16 editor offset -> Tree-sitter UTF-8 byte/point 转换正确性。
+冻结 Monaco / Project Protocol 与 `web-tree-sitter` JavaScript API 的 UTF-16
+code-unit 坐标语义。
 
 ### 允许修改
 
@@ -29,10 +30,30 @@ text = replacement text
 EditCodec 内部负责：
 
 ```text
-UTF-16 offset -> UTF-8 byte index -> Tree-sitter Point/InputEdit
+UTF-16 offset -> Tree-sitter JavaScript Point/InputEdit
 ```
 
-上层不得看到 byte/UTF-8 细节。
+`web-tree-sitter` WASM binding 再负责把 JavaScript API 坐标转换到
+Tree-sitter native byte representation。业务代码和 Adapter 不得自行把
+`web-tree-sitter` JavaScript `InputEdit` / `Point` 转成 UTF-8 byte offset 或
+byte column。
+
+坐标 Source of Truth：
+
+```text
+Monaco / Project Protocol:
+UTF-16 code-unit offset / column
+
+        ↓
+
+web-tree-sitter JavaScript API:
+UTF-16 code-unit index / column
+
+        ↓
+
+web-tree-sitter WASM binding:
+内部负责转换到 Tree-sitter native byte representation
+```
 
 ### 必测
 
@@ -137,7 +158,8 @@ changedRanges: TextRange[]
 - Unicode/CRLF/batch/multi-cursor 正确。
 - version mismatch 不修改 session。
 - incremental failure 进入 desynced/resync。
-- changedRanges 不泄露 Tree-sitter byte point。
+- changedRanges 使用项目的 0-based UTF-16 `TextRange`，不泄露 Tree-sitter
+  native byte point。
 
 ## Stop Rule
 

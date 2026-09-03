@@ -3,6 +3,7 @@ import type * as Monaco from "monaco-editor/esm/vs/editor/editor.api.js";
 import type { SyntaxSelectionPath, TextPosition, TextRange } from "../../syntax/types";
 import type { TreeSitterClientRequest } from "../../syntax/tree-sitter/client";
 import type { SelectionRangesResult, WorkerResponse } from "../../syntax/tree-sitter/protocol";
+import { DocumentSyntaxCapabilityRegistry } from "./document-capability-registry";
 
 export interface SelectionCapabilityClient {
   request(request: TreeSitterClientRequest): Promise<WorkerResponse>;
@@ -152,11 +153,15 @@ function toMonacoRange(range: TextRange): Monaco.languages.SelectionRange {
 }
 
 export function createSelectionRangeProvider(
-  coordinator: SelectionCoordinator,
+  registry: DocumentSyntaxCapabilityRegistry,
 ): Monaco.languages.SelectionRangeProvider & { dispose(): void } {
   return {
-    provideSelectionRanges: (model, positions) =>
-      coordinator
+    provideSelectionRanges: (model, positions) => {
+      const coordinator = registry.get(model.uri.toString())?.selection;
+      if (coordinator === undefined) {
+        return Promise.resolve(positions.map(() => []));
+      }
+      return coordinator
         .request(
           model.getVersionId(),
           positions.map(({ lineNumber, column }) => ({
@@ -166,17 +171,18 @@ export function createSelectionRangeProvider(
         )
         .then((selections) =>
           selections.map((selection) => selection.ranges.map((range) => toMonacoRange(range))),
-        ),
-    dispose: () => coordinator.dispose(),
+        );
+    },
+    dispose: () => undefined,
   };
 }
 
 export function registerSelectionRangeProvider(
   monaco: typeof Monaco,
   languageId: string,
-  coordinator: SelectionCoordinator,
+  registry: DocumentSyntaxCapabilityRegistry,
 ): Monaco.IDisposable {
-  const provider = createSelectionRangeProvider(coordinator);
+  const provider = createSelectionRangeProvider(registry);
   const registration = monaco.languages.registerSelectionRangeProvider(languageId, provider);
   return {
     dispose: () => {

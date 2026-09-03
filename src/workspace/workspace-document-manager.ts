@@ -195,7 +195,7 @@ export class WorkspaceDocumentManager {
         return undefined;
       }
       const languageId = sourceEntry.model.getLanguageId();
-      this.closeEntry(sourceEntry, true, true);
+      this.closeEntry(sourceEntry);
       await sourceEntry.saveTail;
       const reopened = await this.openDocument(
         destinationPath,
@@ -392,7 +392,7 @@ export class WorkspaceDocumentManager {
     entry.suppressDirty = false;
   }
 
-  private closeEntry(entry: DocumentEntry, disposeModel = true, disposeSyntaxFirst = false): void {
+  private closeEntry(entry: DocumentEntry, disposeModel = true): void {
     if (entry.closed) {
       return;
     }
@@ -401,14 +401,9 @@ export class WorkspaceDocumentManager {
       disposable.dispose();
     }
     entry.disposables.length = 0;
-    if (disposeSyntaxFirst) {
-      entry.syntaxBinding.dispose();
-    }
+    entry.syntaxBinding.dispose();
     if (disposeModel && !entry.model.isDisposed()) {
       entry.model.dispose();
-    }
-    if (!disposeSyntaxFirst) {
-      entry.syntaxBinding.dispose();
     }
     this.#documents.delete(entry.uri);
   }

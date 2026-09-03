@@ -4,6 +4,10 @@ import type * as Monaco from "monaco-editor/esm/vs/editor/editor.api.js";
 import "monaco-editor/esm/vs/basic-languages/sql/sql.contribution.js";
 
 import {
+  DocumentSyntaxCapabilityRegistry,
+  type DocumentSyntaxCapabilityDisposable,
+} from "../../editor/monaco/document-capability-registry";
+import {
   registerSemanticHighlightProvider,
   HighlightCoordinator,
 } from "../../editor/monaco/highlight-coordinator";
@@ -13,6 +17,7 @@ import {
 } from "../../editor/monaco/folding-provider";
 import {
   createSelectionRangeProvider,
+  registerSelectionRangeProvider,
   SelectionCoordinator,
 } from "../../editor/monaco/selection-provider";
 import {
@@ -68,6 +73,8 @@ interface ProbeResources {
   highlights?: HighlightCoordinator;
   folding?: FoldingCoordinator;
   selection?: SelectionCoordinator;
+  registry?: DocumentSyntaxCapabilityRegistry;
+  capabilityRegistration?: DocumentSyntaxCapabilityDisposable;
   selectionProvider?: Monaco.languages.SelectionRangeProvider & { dispose(): void };
   semanticRegistration?: Monaco.IDisposable;
   foldingRegistration?: Monaco.IDisposable;
@@ -109,6 +116,7 @@ function initialStatus(): ProbeStatus {
 }
 
 function disposeResources(resources: ProbeResources): void {
+  resources.capabilityRegistration?.dispose();
   resources.semanticRegistration?.dispose();
   resources.foldingRegistration?.dispose();
   resources.selectionRegistration?.dispose();
@@ -221,6 +229,7 @@ function M2SyntaxCapabilityProbe() {
             resources.worker,
             resources.supervisor.workerGeneration,
           );
+          resources.registry = new DocumentSyntaxCapabilityRegistry();
           const capabilityClient = {
             request: (request: TreeSitterClientRequest) => {
               if (request.type === "GetHighlights") {
@@ -267,20 +276,21 @@ function M2SyntaxCapabilityProbe() {
             getDocumentVersion: () => resources.model?.getVersionId() ?? 0,
             onError: (error) => reportCapabilityError(error, setStatus),
           });
-          resources.selectionProvider = createSelectionRangeProvider(resources.selection);
+          resources.selectionProvider = createSelectionRangeProvider(resources.registry);
           resources.semanticRegistration = registerSemanticHighlightProvider(
             monaco,
             "sql",
-            resources.highlights,
+            resources.registry,
           );
           resources.foldingRegistration = registerFoldingRangeProvider(
             monaco,
             "sql",
-            resources.folding,
+            resources.registry,
           );
-          resources.selectionRegistration = monaco.languages.registerSelectionRangeProvider(
+          resources.selectionRegistration = registerSelectionRangeProvider(
+            monaco,
             "sql",
-            resources.selectionProvider,
+            resources.registry,
           );
 
           resources.highlights.onDidChange(() => {
@@ -314,6 +324,14 @@ function M2SyntaxCapabilityProbe() {
               resources.folding?.requestLatest(result.documentVersion);
             },
           });
+          resources.capabilityRegistration = resources.registry.register(
+            resources.model.uri.toString(),
+            {
+              highlight: resources.highlights,
+              folding: resources.folding,
+              selection: resources.selection,
+            },
+          );
         });
       })
       .catch((error: unknown) => {

@@ -214,7 +214,7 @@ describe("DocumentManager", () => {
         startIndex: 0,
         endIndex: 4,
         startPosition: { row: 0, column: 0 },
-        endPosition: { row: 0, column: 4 },
+        endPosition: { row: 0, column: 2 },
       },
     ]);
     parseSpy.mockReturnValueOnce(oldTree.value).mockReturnValueOnce(newTree.value);
@@ -226,6 +226,14 @@ describe("DocumentManager", () => {
       }),
     );
 
+    expect(oldTree.editSpy).toHaveBeenCalledWith({
+      startPosition: { row: 0, column: 1 },
+      oldEndPosition: { row: 0, column: 2 },
+      newEndPosition: { row: 0, column: 2 },
+      startIndex: 1,
+      oldEndIndex: 2,
+      newEndIndex: 2,
+    });
     expect(oldTree.editSpy).toHaveBeenCalledTimes(1);
     expect(oldTree.deleteSpy).toHaveBeenCalledTimes(1);
     expect(session.tree).toBe(newTree.value);

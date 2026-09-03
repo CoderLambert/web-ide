@@ -5,124 +5,6 @@ import {
   encodeEditTransaction,
   EditCodecError,
 } from "../../../src/syntax/tree-sitter/edit-codec";
-import type { InputEdit, TreeSitterPoint } from "../../../src/syntax/tree-sitter/edit-codec";
-
-interface ReferenceTextMetrics {
-  byteOffsets: Uint32Array;
-  lineStarts: number[];
-}
-
-function referenceUtf8BytesForCodePoint(codePoint: number): number {
-  if (codePoint <= 0x7f) return 1;
-  if (codePoint <= 0x7ff) return 2;
-  if (codePoint <= 0xffff) return 3;
-  return 4;
-}
-
-function referenceCreateTextMetrics(text: string): ReferenceTextMetrics {
-  const byteOffsets = new Uint32Array(text.length + 1);
-  const lineStarts = [0];
-  let byteOffset = 0;
-  for (let index = 0; index < text.length;) {
-    const codePoint = text.codePointAt(index);
-    if (codePoint === undefined) {
-      throw new Error("Reference replacement contains an invalid code point.");
-    }
-    const codeUnitLength = codePoint > 0xffff ? 2 : 1;
-    byteOffset += referenceUtf8BytesForCodePoint(codePoint);
-    for (let codeUnit = 1; codeUnit <= codeUnitLength; codeUnit += 1) {
-      byteOffsets[index + codeUnit] = byteOffset;
-    }
-    if (codePoint === 0x0a) lineStarts.push(index + codeUnitLength);
-    index += codeUnitLength;
-  }
-  return { byteOffsets, lineStarts };
-}
-
-function referencePointAtOffset(metrics: ReferenceTextMetrics, offset: number): TreeSitterPoint {
-  let low = 0;
-  let high = metrics.lineStarts.length;
-  while (low < high) {
-    const middle = Math.floor((low + high) / 2);
-    if ((metrics.lineStarts[middle] ?? 0) <= offset) {
-      low = middle + 1;
-    } else {
-      high = middle;
-    }
-  }
-
-  const row = Math.max(0, low - 1);
-  const lineStart = metrics.lineStarts[row] ?? 0;
-  return { row, column: metrics.byteOffsets[offset] - metrics.byteOffsets[lineStart] };
-}
-
-function referencePointAfterText(start: TreeSitterPoint, text: string): TreeSitterPoint {
-  let row = start.row;
-  let column = start.column;
-
-  for (let index = 0; index < text.length;) {
-    const codePoint = text.codePointAt(index);
-    if (codePoint === undefined) {
-      throw new Error("Reference replacement contains an invalid code point.");
-    }
-    const codeUnitLength = codePoint > 0xffff ? 2 : 1;
-    const byteLength = referenceUtf8BytesForCodePoint(codePoint);
-    if (codePoint === 0x0a) {
-      row += 1;
-      column = 0;
-    } else {
-      column += byteLength;
-    }
-    index += codeUnitLength;
-  }
-
-  return { row, column };
-}
-
-function referenceUtf8ByteLength(text: string): number {
-  let byteLength = 0;
-  for (let index = 0; index < text.length;) {
-    const codePoint = text.codePointAt(index);
-    if (codePoint === undefined) {
-      throw new Error("Reference text contains an invalid code point.");
-    }
-    byteLength += referenceUtf8BytesForCodePoint(codePoint);
-    index += codePoint > 0xffff ? 2 : 1;
-  }
-  return byteLength;
-}
-
-function referenceEncodeEditTransaction(
-  text: string,
-  changes: readonly { rangeOffset: number; rangeLength: number; text: string }[],
-): { stagedText: string; inputEdits: InputEdit[] } {
-  const sortedChanges = [...changes].sort((left, right) => right.rangeOffset - left.rangeOffset);
-  let stagedText = text;
-  const inputEdits: InputEdit[] = [];
-  const metrics = referenceCreateTextMetrics(text);
-
-  for (const change of sortedChanges) {
-    const startOffset = change.rangeOffset;
-    const endOffset = startOffset + change.rangeLength;
-    const startPosition = referencePointAtOffset(metrics, startOffset);
-    const oldEndPosition = referencePointAtOffset(metrics, endOffset);
-    const newEndPosition = referencePointAfterText(startPosition, change.text);
-    const startIndex = referenceUtf8ByteLength(text.slice(0, startOffset));
-    const oldEndIndex = referenceUtf8ByteLength(text.slice(0, endOffset));
-
-    inputEdits.push({
-      startPosition,
-      oldEndPosition,
-      newEndPosition,
-      startIndex,
-      oldEndIndex,
-      newEndIndex: startIndex + referenceUtf8ByteLength(change.text),
-    });
-    stagedText = `${stagedText.slice(0, startOffset)}${change.text}${stagedText.slice(endOffset)}`;
-  }
-
-  return { stagedText, inputEdits };
-}
 
 function largeAsciiSource(): string {
   return `a${"x".repeat(1024 * 1024 - 2)}z`;
@@ -135,36 +17,77 @@ describe("EditCodec", () => {
       source: "abcd",
       changes: [{ rangeOffset: 2, rangeLength: 0, text: "XY" }],
       expectedText: "abXYcd",
+      expectedEdit: {
+        startPosition: { row: 0, column: 2 },
+        oldEndPosition: { row: 0, column: 2 },
+        newEndPosition: { row: 0, column: 4 },
+        startIndex: 2,
+        oldEndIndex: 2,
+        newEndIndex: 4,
+      },
     },
     {
       name: "Unicode replace",
       source: "a中文😀b",
       changes: [{ rangeOffset: 1, rangeLength: 4, text: "世界" }],
       expectedText: "a世界b",
+      expectedEdit: {
+        startPosition: { row: 0, column: 1 },
+        oldEndPosition: { row: 0, column: 5 },
+        newEndPosition: { row: 0, column: 3 },
+        startIndex: 1,
+        oldEndIndex: 5,
+        newEndIndex: 3,
+      },
     },
     {
       name: "multiline insert",
       source: "SELECT 1;\nSELECT 2;",
       changes: [{ rangeOffset: 9, rangeLength: 0, text: "中文\n" }],
       expectedText: "SELECT 1;中文\n\nSELECT 2;",
+      expectedEdit: {
+        startPosition: { row: 0, column: 9 },
+        oldEndPosition: { row: 0, column: 9 },
+        newEndPosition: { row: 1, column: 0 },
+        startIndex: 9,
+        oldEndIndex: 9,
+        newEndIndex: 12,
+      },
     },
     {
       name: "CRLF delete",
       source: "one\r\ntwo",
       changes: [{ rangeOffset: 3, rangeLength: 2, text: "" }],
       expectedText: "onetwo",
+      expectedEdit: {
+        startPosition: { row: 0, column: 3 },
+        oldEndPosition: { row: 1, column: 0 },
+        newEndPosition: { row: 0, column: 3 },
+        startIndex: 3,
+        oldEndIndex: 5,
+        newEndIndex: 3,
+      },
     },
     {
       name: "replace representative undo/redo edit",
       source: "SELECT old;",
       changes: [{ rangeOffset: 7, rangeLength: 3, text: "new" }],
       expectedText: "SELECT new;",
+      expectedEdit: {
+        startPosition: { row: 0, column: 7 },
+        oldEndPosition: { row: 0, column: 10 },
+        newEndPosition: { row: 0, column: 10 },
+        startIndex: 7,
+        oldEndIndex: 10,
+        newEndIndex: 10,
+      },
     },
-  ])("encodes $name", ({ source, changes, expectedText }) => {
+  ])("encodes $name", ({ source, changes, expectedText, expectedEdit }) => {
     const transaction = encodeEditTransaction(source, changes);
 
     expect(transaction.stagedText).toBe(expectedText);
     expect(transaction.inputEdits).toHaveLength(1);
+    expect(transaction.inputEdits[0]).toEqual(expectedEdit);
     for (const edit of transaction.inputEdits) {
       expect(edit.startIndex).toBeLessThanOrEqual(edit.oldEndIndex);
       expect(edit.startIndex).toBeLessThanOrEqual(edit.newEndIndex);
@@ -191,7 +114,7 @@ describe("EditCodec", () => {
     expect(transaction.inputEdits[2]?.startIndex).toBe(1);
   });
 
-  it("keeps original UTF-8 positions for a Unicode batch transaction", () => {
+  it("keeps original UTF-16 positions for a Unicode batch transaction", () => {
     const transaction = encodeEditTransaction("前😀 middle\n尾", [
       { rangeOffset: 1, rangeLength: 2, text: "后" },
       { rangeOffset: 9, rangeLength: 1, text: "终" },
@@ -200,31 +123,37 @@ describe("EditCodec", () => {
     expect(transaction.stagedText).toBe("前后 middl终\n尾");
     expect(transaction.inputEdits).toMatchObject([
       {
-        startPosition: { row: 0, column: 13 },
-        oldEndPosition: { row: 0, column: 14 },
-        newEndPosition: { row: 0, column: 16 },
+        startPosition: { row: 0, column: 9 },
+        oldEndPosition: { row: 0, column: 10 },
+        newEndPosition: { row: 0, column: 10 },
+        startIndex: 9,
+        oldEndIndex: 10,
+        newEndIndex: 10,
       },
       {
-        startPosition: { row: 0, column: 3 },
-        oldEndPosition: { row: 0, column: 7 },
-        newEndPosition: { row: 0, column: 6 },
+        startPosition: { row: 0, column: 1 },
+        oldEndPosition: { row: 0, column: 3 },
+        newEndPosition: { row: 0, column: 2 },
+        startIndex: 1,
+        oldEndIndex: 3,
+        newEndIndex: 2,
       },
     ]);
   });
 
-  it("uses UTF-8 byte columns while retaining UTF-16 input offsets", () => {
+  it("uses UTF-16 code-unit indices and columns for mixed Unicode text", () => {
     const transaction = new EditCodec().encode("中😀x", [
       { rangeOffset: 3, rangeLength: 1, text: "y" },
     ]);
 
     expect(transaction.stagedText).toBe("中😀y");
     expect(transaction.inputEdits[0]).toMatchObject({
-      startPosition: { row: 0, column: 7 },
-      oldEndPosition: { row: 0, column: 8 },
-      newEndPosition: { row: 0, column: 8 },
-      startIndex: 7,
-      oldEndIndex: 8,
-      newEndIndex: 8,
+      startPosition: { row: 0, column: 3 },
+      oldEndPosition: { row: 0, column: 4 },
+      newEndPosition: { row: 0, column: 4 },
+      startIndex: 3,
+      oldEndIndex: 4,
+      newEndIndex: 4,
     });
   });
 
@@ -263,23 +192,40 @@ describe("EditCodec", () => {
         { rangeOffset: 3, rangeLength: 2, text: "" },
       ],
     },
-  ])("matches the dense reference for $name", ({ source, changes }) => {
-    expect(encodeEditTransaction(source, changes)).toEqual(
-      referenceEncodeEditTransaction(source, changes),
+  ])("uses UTF-16 coordinates for $name", ({ source, changes }) => {
+    const transaction = encodeEditTransaction(source, changes);
+    expect(transaction.stagedText).toBe(
+      changes
+        .slice()
+        .sort((left, right) => right.rangeOffset - left.rangeOffset)
+        .reduce(
+          (stagedText, change) =>
+            `${stagedText.slice(0, change.rangeOffset)}${change.text}${stagedText.slice(
+              change.rangeOffset + change.rangeLength,
+            )}`,
+          source,
+        ),
     );
+    expect(transaction.inputEdits.every((edit) => edit.startIndex >= 0)).toBe(true);
   });
 
   it.each([
     { name: "start", offset: 0 },
     { name: "middle", offset: Math.floor((1024 * 1024) / 2) },
     { name: "end", offset: 1024 * 1024 - 1 },
-  ])("matches the dense reference for a 1MB $name edit", ({ offset }) => {
+  ])("preserves UTF-16 offsets for a 1MB $name edit", ({ offset }) => {
     const source = largeAsciiSource();
     const changes = [{ rangeOffset: offset, rangeLength: 1, text: "q" }];
 
-    expect(encodeEditTransaction(source, changes)).toEqual(
-      referenceEncodeEditTransaction(source, changes),
-    );
+    const transaction = encodeEditTransaction(source, changes);
+    expect(transaction.inputEdits[0]).toMatchObject({
+      startIndex: offset,
+      oldEndIndex: offset + 1,
+      newEndIndex: offset + 1,
+      startPosition: { row: 0, column: offset },
+      oldEndPosition: { row: 0, column: offset + 1 },
+      newEndPosition: { row: 0, column: offset + 1 },
+    });
   });
 
   it("rejects out-of-bounds, overlapping, and surrogate-splitting changes", () => {

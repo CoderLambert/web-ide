@@ -3,6 +3,7 @@ import type * as Monaco from "monaco-editor/esm/vs/editor/editor.api.js";
 import { SYNTAX_TOKEN_TYPES, type SyntaxToken } from "../../syntax/types";
 import type { TreeSitterClientRequest } from "../../syntax/tree-sitter/client";
 import type { HighlightsResult, WorkerResponse } from "../../syntax/tree-sitter/protocol";
+import { DocumentSyntaxCapabilityRegistry } from "./document-capability-registry";
 
 export interface HighlightCapabilityClient {
   request(request: TreeSitterClientRequest): Promise<WorkerResponse>;
@@ -241,10 +242,25 @@ function encodeSemanticTokens(
 
 export function createSemanticHighlightProvider(
   monaco: typeof Monaco,
-  coordinator: HighlightCoordinator,
+  registry: DocumentSyntaxCapabilityRegistry,
 ): Monaco.languages.DocumentSemanticTokensProvider & { dispose(): void } {
   const emitter = new monaco.Emitter<void>();
-  const listener = coordinator.onDidChange(() => emitter.fire());
+  const listeners = new Map<string, HighlightCoordinatorListener>();
+  const syncDocument = (
+    uri: string,
+    capabilities: { highlight: HighlightCoordinator } | undefined,
+  ) => {
+    listeners.get(uri)?.dispose();
+    listeners.delete(uri);
+    if (capabilities !== undefined) {
+      listeners.set(
+        uri,
+        capabilities.highlight.onDidChange(() => emitter.fire()),
+      );
+    }
+  };
+  registry.forEach(syncDocument);
+  const registryListener = registry.onDidChange(syncDocument);
 
   return {
     onDidChange: emitter.event,
@@ -254,12 +270,20 @@ export function createSemanticHighlightProvider(
     }),
     provideDocumentSemanticTokens: (model) => {
       const version = model.getVersionId();
+      const coordinator = registry.get(model.uri.toString())?.highlight;
+      if (coordinator === undefined) {
+        return { resultId: String(version), data: new Uint32Array() };
+      }
       coordinator.requestLatest(version);
       return encodeSemanticTokens(model, coordinator.getTokens(version), version);
     },
     releaseDocumentSemanticTokens: () => undefined,
     dispose: () => {
-      listener.dispose();
+      registryListener.dispose();
+      for (const listener of listeners.values()) {
+        listener.dispose();
+      }
+      listeners.clear();
       emitter.dispose();
     },
   };
@@ -268,9 +292,9 @@ export function createSemanticHighlightProvider(
 export function registerSemanticHighlightProvider(
   monaco: typeof Monaco,
   languageId: string,
-  coordinator: HighlightCoordinator,
+  registry: DocumentSyntaxCapabilityRegistry,
 ): Monaco.IDisposable {
-  const provider = createSemanticHighlightProvider(monaco, coordinator);
+  const provider = createSemanticHighlightProvider(monaco, registry);
   const registration = monaco.languages.registerDocumentSemanticTokensProvider(
     languageId,
     provider,

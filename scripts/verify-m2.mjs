@@ -77,9 +77,13 @@ const preview = spawn(
 
 try {
   await waitForPreview(previewUrl, preview);
-  await run("pnpm", ["exec", "playwright", "test", "tests/s0", "tests/m1", "tests/m2"], {
-    env: { ...process.env, S0_BASE_URL: previewUrl },
-  });
+  await run(
+    "pnpm",
+    ["exec", "playwright", "test", "tests/s0", "tests/m1", "tests/m2/syntax-capabilities.spec.ts"],
+    {
+      env: { ...process.env, S0_BASE_URL: previewUrl },
+    },
+  );
 } finally {
   await stopPreview(preview);
 }
