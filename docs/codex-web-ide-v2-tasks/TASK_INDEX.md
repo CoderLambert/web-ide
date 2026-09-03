@@ -12,7 +12,8 @@ W-02 PASS / sealed
 W-03 PASS / sealed
 W-04 PASS / sealed
 W-05 PASS / sealed
-Next: W-06 Workspace Operations Lifecycle
+W-06 PASS / sealed
+Next: W-07 Backend Visibility Contract
 ```
 
 ## Phase S0

@@ -14,10 +14,11 @@ W-02                       PASS / sealed
 W-03                       PASS / sealed
 W-04                       PASS / sealed
 W-05                       PASS / sealed
-Next                       W-06 Workspace Operations Lifecycle
+W-06                       PASS / sealed
+Next                       W-07 Backend Visibility Contract
 ```
 
-当前执行入口是 `04_M25_WORKSPACE_FOUNDATION.md`；M2 已 sealed，不因 M2.5 开发重新打开。W-01 至 W-05 已完成并 sealed，后续从 W-06 开始。
+当前执行入口是 `04_M25_WORKSPACE_FOUNDATION.md`；M2 已 sealed，不因 M2.5 开发重新打开。W-01 至 W-06 已完成并 sealed，后续从 W-07 开始。
 
 ## 使用方式
 
