@@ -6,6 +6,7 @@ import "monaco-editor/esm/vs/basic-languages/sql/sql.contribution.js";
 import { MonacoWorkspaceModelService } from "@/editor/monaco/workspace-model-service";
 import { SqlLabSyntaxRuntime } from "@/features/sql-lab/editor/sql-lab-syntax-runtime";
 import { listSqlFiles, nextSqlFileName } from "@/features/sql-lab/editor/sql-lab-workspace";
+import { resolveSqlQuerySource, type SqlQuerySourceMode } from "@/features/sql-lab/query-source";
 import { RemoteWorkspaceFileSystem } from "@/workspace/remote-workspace-file-system";
 import { WorkspaceDocumentManager } from "@/workspace/workspace-document-manager";
 import type { WorkspacePath } from "@/workspace/path";
@@ -32,9 +33,11 @@ function loadMonacoRuntime(): Promise<typeof Monaco> {
 
 export interface SqlLabEditorProps {
   workspaceId: string;
+  onRun?: (mode: SqlQuerySourceMode, sql: string) => Promise<void>;
+  operationActive?: boolean;
 }
 
-export function SqlLabEditor({ workspaceId }: SqlLabEditorProps) {
+export function SqlLabEditor({ workspaceId, onRun, operationActive = false }: SqlLabEditorProps) {
   const hostRef = useRef<HTMLDivElement>(null);
   const managerRef = useRef<WorkspaceDocumentManager | undefined>(undefined);
   const fileSystemRef = useRef<RemoteWorkspaceFileSystem | undefined>(undefined);
@@ -43,11 +46,14 @@ export function SqlLabEditor({ workspaceId }: SqlLabEditorProps) {
   const activePathRef = useRef<WorkspacePath | undefined>(undefined);
   const modelListenerRef = useRef<Monaco.IDisposable | undefined>(undefined);
   const openFileRef = useRef<(path: WorkspacePath) => Promise<void>>(async () => undefined);
+  const runQueryRef = useRef<(mode: SqlQuerySourceMode) => Promise<void>>(async () => undefined);
+  const onRunRef = useRef<SqlLabEditorProps["onRun"]>(onRun);
   const [files, setFiles] = useState<WorkspacePath[]>([]);
   const [activePath, setActivePath] = useState<WorkspacePath>();
   const [dirty, setDirty] = useState(false);
   const [state, setState] = useState<"loading" | "ready" | "error">("loading");
   const [error, setError] = useState("");
+  onRunRef.current = onRun;
 
   useEffect(() => {
     const host = hostRef.current;
@@ -111,10 +117,12 @@ export function SqlLabEditor({ workspaceId }: SqlLabEditorProps) {
       });
 
     openFileRef.current = openFile;
+    runQueryRef.current = runQuery;
 
     return () => {
       cancelled = true;
       openFileRef.current = async () => undefined;
+      runQueryRef.current = async () => undefined;
       modelListenerRef.current?.dispose();
       editorRef.current?.setModel(null);
       editorRef.current?.dispose();
@@ -159,6 +167,28 @@ export function SqlLabEditor({ workspaceId }: SqlLabEditorProps) {
       setActivePath(path);
       setDirty(document.dirty);
       setError("");
+    }
+
+    async function runQuery(mode: SqlQuerySourceMode): Promise<void> {
+      const editor = editorRef.current;
+      const runtime = syntaxRuntimeRef.current;
+      if (editor === undefined || runtime === undefined) {
+        return;
+      }
+      try {
+        const sql = await resolveSqlQuerySource(mode, editor, runtime.registry);
+        if (sql === undefined || sql.trim() === "") {
+          setError(`No SQL source is available for Run ${mode}.`);
+          return;
+        }
+        if (onRunRef.current === undefined) {
+          setError("SQL execution is not configured.");
+          return;
+        }
+        await onRunRef.current(mode, sql);
+      } catch (runError: unknown) {
+        setError(runError instanceof Error ? runError.message : "Unable to resolve SQL source.");
+      }
     }
   }, [workspaceId]);
 
@@ -223,6 +253,33 @@ export function SqlLabEditor({ workspaceId }: SqlLabEditorProps) {
         >
           Save
         </button>
+        <fieldset
+          disabled={operationActive || activePath === undefined || state !== "ready"}
+          style={{ border: 0, display: "flex", gap: 8, margin: 0, padding: 0 }}
+        >
+          <legend>Run</legend>
+          <button
+            data-testid="sql-lab-run-current"
+            onClick={() => void runQueryRef.current("current")}
+            type="button"
+          >
+            Run Current
+          </button>
+          <button
+            data-testid="sql-lab-run-selection"
+            onClick={() => void runQueryRef.current("selection")}
+            type="button"
+          >
+            Run Selection
+          </button>
+          <button
+            data-testid="sql-lab-run-all"
+            onClick={() => void runQueryRef.current("all")}
+            type="button"
+          >
+            Run All
+          </button>
+        </fieldset>
       </div>
       {error !== "" ? (
         <p aria-live="polite" data-testid="sql-lab-error">
