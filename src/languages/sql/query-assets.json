@@ -1,0 +1,31 @@
+[
+  {
+    "kind": "highlights",
+    "repository": "https://github.com/DerekStride/tree-sitter-sql.git",
+    "revision": "7b51ecda191d36b92f5a90a8d1bc3faef1c7b8b8",
+    "path": "queries/highlights.scm",
+    "license": "MIT",
+    "licensePath": "LICENSE",
+    "localArtifactPath": "/languages/sql/queries/highlights.scm",
+    "patches": [
+      {
+        "id": "sql-number-predicate-javascript-regexp",
+        "description": "Replace the Tree-sitter CLI %d shorthand with a JavaScript-compatible digit class for web-tree-sitter match? execution.",
+        "search": "%d",
+        "replace": "\\d",
+        "expectedMatches": 3
+      }
+    ],
+    "expectedCaptures": ["@keyword", "@string", "@number", "@float", "@comment", "@function.call"]
+  },
+  {
+    "kind": "folds",
+    "repository": "https://github.com/nvim-treesitter/nvim-treesitter.git",
+    "revision": "cf12346a3414fa1b06af75c79faebe7f76df080a",
+    "path": "queries/sql/folds.scm",
+    "license": "Apache-2.0",
+    "licensePath": "LICENSE",
+    "localArtifactPath": "/languages/sql/queries/folds.scm",
+    "expectedCaptures": ["@fold"]
+  }
+]

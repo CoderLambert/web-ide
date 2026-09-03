@@ -11,6 +11,7 @@
     "generate-routes": "tsr generate",
     "build": "vp build",
     "build:sql-grammar": "node scripts/build-sql-grammar.mjs",
+    "sync:language-assets": "node scripts/sync-language-assets.mjs",
     "verify:sql-grammar": "pnpm build:sql-grammar && git diff --exit-code -- public/languages/sql/tree-sitter-sql.wasm",
     "preview": "vp preview",
     "start:s0:lsp-mock": "node scripts/s0-lsp-jsonrpc-server.mjs",

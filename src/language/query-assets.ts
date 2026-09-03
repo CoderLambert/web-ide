@@ -16,6 +16,7 @@ export interface QueryAssetManifestEntry {
   readonly revision: string;
   readonly path: string;
   readonly license: string;
+  readonly licensePath?: string;
   /** Browser-relative path used by the Worker runtime. */
   readonly localArtifactPath: string;
   readonly patches?: readonly QueryAssetPatch[];
