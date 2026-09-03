@@ -15,7 +15,7 @@ export default defineConfig({
     include: ["tests/unit/**/*.test.ts"],
   },
   staged: {
-    "*": "vp check",
+    "*": "vp check --no-error-on-unmatched-pattern",
   },
   lint: {
     jsPlugins: [{ name: "vite-plus", specifier: "vite-plus/oxlint-plugin" }],

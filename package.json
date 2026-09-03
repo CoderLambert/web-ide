@@ -7,6 +7,7 @@
   },
   "scripts": {
     "dev": "vp dev --port 3000",
+    "prepare": "vp config --no-agent",
     "generate-routes": "tsr generate",
     "build": "vp build",
     "build:sql-grammar": "node scripts/build-sql-grammar.mjs",
