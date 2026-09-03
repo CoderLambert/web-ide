@@ -1,6 +1,14 @@
 import { sqlLanguageDefinition } from "../../../languages/sql/definition";
-import type { InspectDocument, InspectResult, ParseResult, WorkerRequest } from "../protocol";
+import type {
+  GetHighlights,
+  HighlightsResult,
+  InspectDocument,
+  InspectResult,
+  ParseResult,
+  WorkerRequest,
+} from "../protocol";
 import { DocumentManager, DocumentManagerError } from "./document-manager";
+import { collectHighlightTokens } from "./highlight";
 import { AstInspector } from "./inspector";
 import { WorkerRuntime } from "./runtime";
 import { installWorkerHost } from "./worker";
@@ -101,9 +109,60 @@ function startWorker(workerGeneration: number): void {
           const result = inspector.inspect(session, request);
           return inspectResultForRequest(request, session.documentVersion, result);
         }
+        case "GetHighlights":
+          return getHighlightsForRequest(request, documents, runtime);
       }
     },
   });
+}
+
+async function getHighlightsForRequest(
+  request: GetHighlights,
+  documents: DocumentManager,
+  runtime: WorkerRuntime,
+): Promise<HighlightsResult> {
+  const session = documents.getSession(request.sessionId);
+  if (session === undefined || session.documentUri !== request.documentUri) {
+    throw new DocumentManagerError(
+      "SESSION_NOT_FOUND",
+      `Session "${request.sessionId}" does not own document "${request.documentUri}".`,
+    );
+  }
+  if (session.state === "desynced") {
+    throw new DocumentManagerError(
+      "RESYNC_REQUIRED",
+      `Session "${request.sessionId}" requires a full document resync.`,
+    );
+  }
+  if (request.expectedVersion !== session.documentVersion) {
+    throw new DocumentManagerError(
+      "VERSION_MISMATCH",
+      `Expected document version ${request.expectedVersion}, found ${session.documentVersion}.`,
+    );
+  }
+
+  const languageRuntime = await runtime.loadLanguage(session.languageId);
+  const query = await languageRuntime.getQuery("highlights");
+  if (
+    documents.getSession(request.sessionId) !== session ||
+    request.expectedVersion !== session.documentVersion
+  ) {
+    throw new DocumentManagerError(
+      "VERSION_MISMATCH",
+      `Document "${request.documentUri}" changed before highlights completed.`,
+    );
+  }
+
+  return {
+    type: "HighlightsResult",
+    protocolVersion: request.protocolVersion,
+    workerGeneration: request.workerGeneration,
+    requestId: request.requestId,
+    sessionId: session.sessionId,
+    documentUri: session.documentUri,
+    documentVersion: session.documentVersion,
+    tokens: collectHighlightTokens(session, query),
+  };
 }
 
 function inspectResultForRequest(
