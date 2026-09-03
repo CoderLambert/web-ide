@@ -54,6 +54,11 @@
     "vite-plus": "catalog:"
   },
   "devEngines": {
+    "runtime": {
+      "name": "node",
+      "version": "24.20.0",
+      "onFail": "download"
+    },
     "packageManager": {
       "name": "pnpm",
       "version": "11.25.0",
