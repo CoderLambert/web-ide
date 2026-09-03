@@ -7,10 +7,13 @@
 ```text
 S0 Runtime Compatibility   PASS / sealed
 M1 Syntax Foundation       PASS / sealed
-Next                       M2 Syntax UX
+M2 Syntax UX               PASS / sealed
+M2.5 Workspace Foundation  active
+W-01                       PASS / sealed
+Next                       W-02 WorkspaceFileSystem Contract
 ```
 
-M2 尚未开始实现。当前执行入口是 `03_M2_SYNTAX_UX.md`；M1 实现不因 M2 Preflight 重新打开。
+当前执行入口是 `04_M25_WORKSPACE_FOUNDATION.md`；M2 已 sealed，不因 M2.5 开发重新打开。W-01 已完成并 sealed，后续从 W-02 开始。
 
 ## 使用方式
 
@@ -86,7 +89,7 @@ TASK_INDEX.md
 3. 独立 Review。
 4. 技术 Spike / 兼容性验证。
 
-禁止为了“看起来并行”而把强依赖任务并行执行。
+禁止为了“看起来并行”而把强依赖任务并行执行。M2.5 的 W-03 → W-04 明确串行；仅允许 ownership 独立的 security fixtures、dirty/save race tests、read-only review 等辅助工作并行。
 
 ## Stop Rule
 

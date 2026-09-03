@@ -8,13 +8,14 @@
 
 ```text
 Backend Workspace Filesystem = persisted file content Source of Truth
-Monaco Model                = open document / dirty overlay
-Database                    = workspace metadata
+Monaco Model                 = open document / unsaved text buffer
+Dirty State                  = dirty/version metadata
+Database                     = workspace metadata
 ```
 
-M2.5 只保留薄的 `WorkspaceFileSystem` boundary，并且当前只实现 Web 所需的 adapter。Backend host 的 real path 只能存在于 adapter 内，不能泄露到 Browser / Domain。
+M2.5 只保留薄的 `WorkspaceFileSystem` boundary，并且当前只实现 Web 所需的 adapter。Backend host 的 real path 只能存在于 Backend filesystem / deployment adapter 内，不能泄露到 Browser / Domain / Protocol。
 
-禁止为同一份 persisted content 建立双 Source of Truth；Monaco 的未保存内容必须作为 overlay 管理，不能反向取代 Backend persisted content。Desktop / Neovim 仅作为未来架构边界检查，不在 M2.5 提前实现跨平台 filesystem/runtime adapter。
+禁止为同一份 persisted content 建立双 Source of Truth；Monaco 是唯一未保存文本 buffer，Dirty State 只保存状态/版本 metadata，不再复制一份未保存文本。Desktop / Neovim 仅作为未来架构边界检查，不在 M2.5 提前实现跨平台 filesystem/runtime adapter。
 
 ### 当前 Workspace Scope
 
@@ -27,6 +28,30 @@ one IDE shell = one active workspace
 `file:///workspace/...` 只在当前 active workspace 内作为 canonical URI namespace。不要为了未来 multi-root / simultaneous multi-workspace 预先改 URI 方案。
 
 如果未来实现 workspace switch，必须先处理 dirty state，再 dispose 当前 Workspace 的 Monaco Models / Syntax Sessions / derived state，之后才能激活新 Workspace；第一版不要求实现 multi-root。
+
+## Task Graph（冻结）
+
+```text
+W-01 WorkspacePath / URI
+        ↓
+W-02 WorkspaceFileSystem Contract
+        ↓
+W-03 BackendWorkspaceFileSystem
+        ↓
+W-04 Workspace API / RemoteWorkspaceFileSystem
+        ↓
+W-05 Monaco / Dirty Overlay
+        ↓
+W-06 Operations Lifecycle
+        ↓
+W-07 Backend Visibility
+        ↓
+W-08 Integration Gate
+        ↓
+      REVIEW
+```
+
+W-03 与 W-04 不并行。W-04 的真实验收依赖 W-03 已冻结的 persisted filesystem、host-path isolation、symlink policy 与 server-side workspace resolution。
 
 ---
 
@@ -74,8 +99,8 @@ src/main.ts
 
 ```text
 ""              = workspace root，仅用于允许 root 的目录操作
-src/main.ts     = 合法
-src/lib/a.ts    = 合法
+src/main.ts      = 合法
+src/lib/a.ts     = 合法
 ```
 
 非 root `WorkspacePath` 必须：
@@ -113,7 +138,7 @@ src/lib/a.ts    = 合法
 
 ## 目标
 
-建立薄的文件系统能力边界，不在接口内存储文件正文，也不把 metadata Store 当作 persisted content Store。
+建立薄的 workspace-bound 文件系统能力边界，冻结 CRUD、root 与错误语义；不在接口内存储文件正文，也不把 metadata Store 当作 persisted content Store。
 
 ## 实现
 
@@ -123,7 +148,6 @@ src/lib/a.ts    = 合法
 interface WorkspaceEntry {
   path: WorkspacePath;
   kind: "file" | "directory";
-  languageId?: string;
 }
 
 interface WorkspaceFileSystem {
@@ -137,15 +161,101 @@ interface WorkspaceFileSystem {
 }
 ```
 
-接口只定义能力，不保存文件正文。Workspace metadata 由独立 metadata boundary 管理；M2.5 不建设 Git、search 或 filesystem index。
+一个 `WorkspaceFileSystem` instance 绑定一个 active workspace。`workspaceId` 不进入每个 filesystem method；由 Remote/Server adapter 的创建边界绑定 workspace identity。
+
+当前 contract 是 IDE 所需的 UTF-8 text filesystem capability：`readFile` / `writeFile` 使用 `string`。Binary/streaming file API 不属于 M2.5。
+
+### Operation Semantics（冻结）
+
+```text
+list("")
+  allowed
+  返回 workspace root 的直接 children
+
+list(non-root)
+  directory only
+  返回直接 children，不递归
+  WorkspaceEntry.path 始终是完整 WorkspacePath
+
+readFile
+  existing file only
+
+writeFile
+  existing file only
+  不隐式 create
+
+createFile
+  创建 empty UTF-8 text file
+  parent directory 必须存在
+  target 必须不存在
+
+createDirectory
+  parent directory 必须存在
+  target 必须不存在
+  第一版不 recursive mkdir
+
+rename
+  source 必须存在
+  destination 必须不存在
+  destination parent 必须存在
+  不 overwrite
+
+delete
+  file 或 empty directory only
+  第一版不 recursive delete
+```
+
+Root `""` 只允许 `list("")`。`readFile` / `writeFile` / `createFile` / `createDirectory` / `rename` / `delete` 都拒绝 root。
+
+### Error Contract（冻结语义，不冻结实现类）
+
+Backend 与 Remote adapter 必须归一化到稳定的 project-level error code；Workspace Core 不依赖 Node errno、HTTP status 或 `fetch` error。
+
+```text
+INVALID_PATH
+NOT_FOUND
+ALREADY_EXISTS
+NOT_FILE
+NOT_DIRECTORY
+DIRECTORY_NOT_EMPTY
+FORBIDDEN
+UNSUPPORTED
+IO_ERROR
+```
+
+接口只定义能力，不保存文件正文。`languageId` 不属于 filesystem entry；语言识别由 Workspace/Language/Editor composition 层处理。Workspace metadata 由独立 metadata boundary 管理；M2.5 不建设 Git、search 或 filesystem index。
 
 ## 验证
 
-接口 contract、path normalization 和 CRUD 行为测试通过。
+- WorkspacePath validation 与 W-01 shared fixtures 一致；禁止另建 normalization 规则。
+- root、CRUD、directory/non-directory、exists/not-found 行为一致。
+- Backend/Remote adapter 可映射到同一稳定 error semantics。
+- `WorkspaceEntry` 不承担 language detection。
 
-## 并行
+## 允许修改
 
-W-01 PASS 后可冻结接口；W-03 与 W-04 可以在接口冻结后并行实现。
+```text
+src/workspace/**
+tests/unit/workspace/**
+tests/fixtures/workspace-*
+```
+
+## 禁止修改
+
+```text
+src/editor/**
+src/syntax/**
+src/server/**
+vite.config.ts
+dependency versions
+```
+
+## 不要做
+
+- 不实现 persisted backend。
+- 不实现 Remote/API。
+- 不增加 binary/streaming API。
+- 不建设通用 repository/storage framework。
 
 ---
 
@@ -157,39 +267,74 @@ W-01 PASS 后可冻结接口；W-03 与 W-04 可以在接口冻结后并行实�
 
 ## 目标
 
-实现 `WorkspacePath` 到 safe host path 的 Backend adapter，并实际读写 persisted workspace directory。
+实现绑定 server-owned workspace root 的 `BackendWorkspaceFileSystem`，把 `WorkspacePath` 安全映射到 host filesystem，并实际读写 persisted workspace directory。
 
 ## 实现
 
-它是 persisted file content 的唯一 Source of Truth。host path 只存在 adapter 内；Domain、Browser、Protocol 和响应 DTO 不得看到 host path。
+它是 persisted file content 的唯一 Source of Truth。host path 只存在 adapter / deployment 层内；Domain、Browser、Protocol 和响应 DTO 不得看到 host path。
 
-Backend root 必须由服务器根据已授权的 `workspaceId` 解析：
+Authorization 与 filesystem adapter 分层：
 
 ```text
-workspaceId
-→ authorize workspace
-→ resolve server-owned workspace root
-→ validate WorkspacePath
-→ safe filesystem operation
+Workspace API / Server Service
+  → authorize workspaceId
+  → resolve server-owned workspace root
+  → create/use BackendWorkspaceFileSystem(boundRoot)
+  → validate WorkspacePath
+  → safe filesystem operation
 ```
 
-客户端不得提供、覆盖或推导 Backend host root。
+`workspaceId` 不是授权凭证；`BackendWorkspaceFileSystem` 不负责理解用户身份、session 或 RBAC，只消费已由 server boundary 解析出的可信 root。客户端不得提供、覆盖或推导 Backend host root。
 
-Path security 不能只检查字符串 `..`。如果 filesystem 中存在 symlink，必须保证最终 target / parent resolution 仍位于已授权 workspace root 内；不得通过 symlink 逃逸 workspace。第一版可以选择明确的 symlink policy，但不能静默跟随到 root 外。
+如果当前没有完整 Workspace Auth / Metadata 系统，W-03 只允许增加最小 server-owned authorization/root resolver boundary；禁止为了本任务建设 Auth framework、RBAC、permission platform、database abstraction 或 workspace metadata platform。
+
+### Symlink Policy（冻结）
+
+第一版不支持 symlink：
+
+- path 中任何已存在的中间 segment 是 symlink → reject。
+- 显式访问 target 是 symlink → reject。
+- create/rename destination 的 parent chain 不得经过 symlink。
+- delete 不跟随 symlink。
+- `list` 不把 symlink entry 暴露成 `WorkspaceEntry`；显式访问该 path 仍拒绝。
+
+Path security 不能只检查字符串 `..`。对 existing target 或 create/rename parent 做实际 resolution 后，必须确认仍 contained in server-owned workspace root。
+
+当前安全假设：workspace root 由 Backend/部署环境控制，不允许不可信本地进程与 IDE 同时恶意替换 filesystem entry。若未来 threat model 包含这种并发本地攻击，应依赖 jail/container/OS isolation，而不是在 M2.5 自研新的低层 filesystem primitive。
 
 ## 验证
 
-- 防止 `../`、encoded traversal 和绝对路径逃逸 Workspace。
-- symlink escape 被拒绝或按明确 policy 安全处理。
-- rename/delete/create 路径行为正确。
-- workspace root containment 和 WorkspacePath contract 正确。
-- 协议响应不泄露 host path。
-- 未授权 `workspaceId` 无法访问 filesystem。
+- W-01 WorkspacePath fixtures 在 Backend 重复执行同一语义验证。
+- absolute / traversal / encoded traversal 不能逃逸 Workspace。
+- symlink intermediate / target 被拒绝；list 不暴露 unsupported symlink entry。
+- rename/delete/create 与 W-02 operation semantics 一致。
+- workspace root containment 正确。
+- host path 不进入 Domain/Protocol/响应 DTO。
+- 未授权 workspace 在创建 Backend adapter 前被 Server boundary 拒绝。
+
+## 允许修改
+
+```text
+src/server/workspace/**
+tests/unit/server/workspace/**
+tests/fixtures/workspace-*
+```
+
+## 禁止修改
+
+```text
+src/editor/**
+src/syntax/**
+src/workspace public contract（除当前 contract 的必要 bug fix）
+dependency versions
+```
 
 ## 不要做
 
 - 不实现 Remote adapter。
 - 不启动 Language Server。
+- 不建设通用 Auth/DB framework。
+- 不支持 symlink traversal。
 
 ---
 
@@ -197,7 +342,7 @@ Path security 不能只检查字符串 `..`。如果 filesystem 中存在 symlin
 
 ## 依赖
 
-`W-02 PASS`；API contract 不依赖 Backend host path。
+`W-01 PASS`, `W-02 PASS`, `W-03 PASS`
 
 ## 目标
 
@@ -205,14 +350,15 @@ Path security 不能只检查字符串 `..`。如果 filesystem 中存在 symlin
 
 ```text
 Browser
-  → RemoteWorkspaceFileSystem
+  → RemoteWorkspaceFileSystem(bound workspaceId)
   → Workspace API
-  → BackendWorkspaceFileSystem
+  → authorize/resolve workspace
+  → BackendWorkspaceFileSystem(bound server-owned root)
 ```
 
 ## 实现
 
-浏览器业务代码通过 `RemoteWorkspaceFileSystem` 使用 `WorkspacePath`，不在各处直接拼接 `fetch("/api/files/...")`。
+浏览器业务代码通过 workspace-bound `RemoteWorkspaceFileSystem` 使用 `WorkspacePath`，不在各处直接拼接 `fetch("/api/files/...")`，也不把 `workspaceId` 塞进每个 `WorkspaceFileSystem` method。
 
 Workspace API 使用结构化逻辑身份：
 
@@ -222,22 +368,47 @@ WorkspacePath
 operation payload
 ```
 
-服务器先授权 `workspaceId`，再使用 server-owned root 执行路径解析。API 不接受 host root/path，也不把 host path 返回 Browser。
+`WorkspacePath` 默认作为 JSON / structured field 传输，不放进会自动 percent-decode 的 URL path segment。只有 endpoint 确实必须经过 transport decode 时，规则固定为：transport decode once → 完整 WorkspacePath validation；应用层不得再次 decode。
 
-优先把 `WorkspacePath` 作为 JSON/结构化字段传输；如果某个 endpoint 必须经过 URL decode，decode 后仍必须执行完整 WorkspacePath validation。
+服务器先 authorize `workspaceId`，再解析 server-owned root，然后调用 Backend adapter。API 不接受或返回 `root`、`basePath`、absolute path、host path、filesystem namespace 等 host filesystem 信息。
+
+Browser 可提前执行 WorkspacePath validation 改善 UX，但 API boundary 与 Backend adapter 仍必须独立保证 server-side validation/security。Remote adapter 把 HTTP/transport/backend error 映射到 W-02 稳定 error semantics。
 
 ## 验证
 
-- API read/write/list/CRUD contract 正确。
-- 未授权 workspace 被拒绝。
-- path traversal / symlink escape 不能通过 API 绕过 Backend contract。
-- 错误、权限和 path 响应不泄露 host path。
+- API read/write/list/CRUD 与 W-02 contract 一致。
+- Remote adapter instance 绑定单一 workspace identity。
+- WorkspacePath 结构化传输，不依赖 URL path percent-decoding。
+- 未授权 workspace 在 Server boundary 被拒绝。
+- traversal / encoded traversal / symlink escape 不能通过 API 绕过 Backend contract。
+- error/permission/path 响应不泄露 host path。
+- Node errno / HTTP status / fetch error 不泄露到 Workspace Core。
+
+## 允许修改
+
+```text
+src/workspace/remote-*
+src/server/workspace/api*
+当前 API 所需 server route files
+tests/unit/workspace/**
+tests/integration/workspace/**
+```
+
+## 禁止修改
+
+```text
+src/editor/**
+src/syntax/**
+LSP
+dependency versions
+```
 
 ## 不要做
 
 - 不实现 Desktop stdio 或 Neovim adapter。
 - 不把 Remote adapter 抽象成 Universal Platform。
 - 不允许客户端传 Backend filesystem root。
+- 不为 WorkspacePath 设计 URL route encoding scheme。
 
 ---
 
@@ -249,11 +420,43 @@ operation payload
 
 ## 目标
 
-打开文件时从 `WorkspaceFileSystem.readFile(path)` 初始化 Monaco Model；Model URI 由 `WorkspaceUriMapper.toUri(path)` 生成。
+打开文件时从 `WorkspaceFileSystem.readFile(path)` 初始化 Monaco Model；Model URI 由 `WorkspaceUriMapper.toUri(path)` 生成。Monaco Model 是唯一 unsaved text buffer；Dirty State 只维护 dirty/version metadata。
 
 ## 实现
 
-Model change 标记 dirty；save 时调用 `WorkspaceFileSystem.writeFile(path, model.getValue())`，成功后清除 dirty。每次按键只更新 Monaco dirty overlay，不写服务器文件。
+Open：
+
+```text
+readFile(path)
+→ create/reuse Monaco Model with canonical URI
+→ create Syntax binding
+→ dirty=false
+```
+
+同一个 canonical URI 不得同时存在多个 active Monaco Models。
+
+Model change 只更新 Monaco 内容和 Dirty State，不写服务器文件，也不复制第二份 `Map<WorkspacePath, string>` 未保存文本 cache。
+
+### Save Correctness（冻结）
+
+同一个 Monaco Model 的 persisted save 写操作必须串行，避免较旧写请求后完成并覆盖较新的 Backend 内容；这是 per-model serialization，不引入全局 scheduler/queue framework。
+
+每次 save 在请求时 capture：
+
+```text
+savedVersion = model.getVersionId()
+savedContent = model.getValue()
+```
+
+随后按该 model 的 save sequence 执行：
+
+```text
+await WorkspaceFileSystem.writeFile(path, savedContent)
+```
+
+成功后只有当当前 `model.getVersionId() === savedVersion` 时才能清除 dirty；如果 save 期间发生新编辑，dirty 必须保持 true。write failure 始终保持 dirty。
+
+因此旧 save response 既不能清除较新的 dirty state，也不能通过 out-of-order write 把 Backend persisted content 回退到旧版本。
 
 ## 验证
 
@@ -265,11 +468,38 @@ save
 dirty=false
 reopen
 content persisted in Backend Workspace Filesystem
+
+edit(version N)
+start save(N)
+edit(version N+1)
+complete save(N)
+dirty remains true
+
+save(N) + save(N+1)
+persisted writes remain ordered
+latest saved version wins
+```
+
+## 允许修改
+
+```text
+src/workspace/**
+src/editor/monaco/**
+related workspace/editor tests
+```
+
+## 禁止修改
+
+```text
+Backend filesystem contract redesign
+Workspace API redesign
+LSP
+dependency versions
 ```
 
 ## 可分配子 Agent
 
-测试 Agent 可独立写 dirty/save integration tests。
+测试 Agent 可独立写 dirty/save race integration tests，不修改 filesystem contract。
 
 ---
 
@@ -277,7 +507,7 @@ content persisted in Backend Workspace Filesystem
 
 ## 依赖
 
-`W-02`, `W-03`, `W-04`, `W-05 PASS`
+`W-02 PASS`, `W-03 PASS`, `W-04 PASS`, `W-05 PASS`
 
 ## 目标
 
@@ -292,15 +522,91 @@ delete
 close
 ```
 
+并冻结 Filesystem、Monaco Model、Dirty State、Syntax Session 的一致生命周期。
+
 ## 实现
 
-统一验证 Filesystem、Monaco Model、Dirty State、Syntax Session 的生命周期一致；不创建第二份 persisted content。
+所有影响 persisted filesystem 的操作遵守：
+
+```text
+validate
+→ Backend persisted operation succeeds
+→ reconcile Monaco / Dirty / Syntax derived state
+```
+
+Backend operation 失败时不提前修改 Monaco/Syntax identity state。Backend 已成功但 client derived-state reconciliation 失败时，以 Backend persisted result 为准并 reload/reconcile；不要反向 rollback persisted filesystem 去迁就 derived state。
+
+### Open / Save / Create
+
+- Open 与 Save 复用 W-05 contract。
+- Create 只有 Backend create 成功后才更新 workspace UI/tree；第一版不要求 create 后自动 open。
+
+### Rename
+
+Dirty open file 不允许 rename；调用方必须先 save，或 discard + close。
+
+Clean open file rename：
+
+```text
+Backend rename succeeds
+→ dispose old Syntax binding/session
+→ dispose old Monaco Model
+→ remove old dirty/derived state
+→ 如需保持打开状态，在 new canonical URI 重新创建/读取 Model
+→ create new Syntax Session
+```
+
+禁止尝试修改 existing Monaco Model URI。
+
+Directory rename 如果存在任何 open descendant（clean 或 dirty）→ reject。第一版不实现整棵目录 subtree 的 Model/Syntax URI migration。
+
+### Delete
+
+Dirty open file 不允许 delete；调用方必须先 save，或 discard + close。
+
+Clean open file delete：Backend delete 成功后 dispose 对应 Monaco Model / Syntax Session，并移除 dirty/derived state。
+
+Directory delete 如果存在任何 open descendant → reject。第一版仍只允许删除 empty directory，不实现 recursive delete。
+
+### Close
+
+```text
+dispose Monaco Model
+→ dispose Syntax binding/session
+→ remove dirty metadata
+```
+
+`close` 本身不写 Backend，不自动 save 未保存 overlay。save/discard/cancel prompt 属于 UI policy；Workspace Core 不把 close 变成隐式 persistence。
+
+如果未来实现 workspace switch，必须先明确 dirty overlay 的 save/discard/cancel 处理，再 dispose 旧 Workspace state；不要同时保留两个 `file:///workspace/...` namespace。
 
 ## 验证
 
-每个操作做 integration test，重点验证 rename/delete 后旧 Path、canonical URI、Model 和 Syntax Session 不残留；close 不写回未保存 overlay。
+- open/save/create/rename/delete/close 都有 integration test。
+- pending save 期间新编辑不会错误清 dirty。
+- clean file rename 后旧 Path、canonical URI、Model、Syntax Session 不残留。
+- dirty file rename/delete 被拒绝。
+- directory rename/delete 在存在 open descendant 时被拒绝。
+- Backend operation failure 不提前破坏 client identity state。
+- close 不写回未保存 overlay。
 
-如果实现 workspace switch，必须先明确 dirty overlay 的 save/discard/cancel 处理，再 dispose 旧 Workspace state；不要同时保留两个 `file:///workspace/...` namespace。
+## 允许修改
+
+```text
+src/workspace lifecycle/operation modules
+src/editor/monaco workspace integration
+必要的 Syntax adapter integration
+related tests
+```
+
+## 禁止修改
+
+```text
+新增 filesystem capability
+multi-workspace / multi-root
+LSP
+dependency versions
+```
 
 ---
 
@@ -312,23 +618,51 @@ close
 
 ## 目标
 
-验证 Backend persisted filesystem 是后续 Language Server 读取的唯一文件视图，不建立 Browser Store → sync → Backend Store 的双存储模型。
+证明 Backend persisted filesystem 是后续 Language Server 读取的唯一文件视图，不建立 Browser Store → sync → Backend Store 的双存储模型。
 
 ## 实现
 
-验证：
+验证真实链路：
 
 ```text
-Browser save
+Browser Model content A
+  → save
   → RemoteWorkspaceFileSystem
   → Workspace API
-  → BackendWorkspaceFileSystem
+  → BackendWorkspaceFileSystem.writeFile
   → real workspace file
+
+BackendWorkspaceFileSystem.readFile(same WorkspacePath)
+  → exactly A
+
+Browser reopen
+  → exactly A
 ```
+
+Backend real path 不出现在 Browser / Domain / API success/error payload。
 
 ## 验证
 
-Browser 保存文件后，Backend subsequent read 通过同一 `WorkspacePath` / canonical URI mapping 能读取同样内容；Backend real path 不出现在 Browser / Domain。
+- Browser save 后 Backend subsequent read 返回完全相同内容。
+- Browser reopen 读取 Backend persisted content，而不是 Browser cache。
+- canonical URI / WorkspacePath mapping 保持一致。
+- API/Browser 中搜索不到 leaked host workspace root。
+
+## 允许修改
+
+```text
+tests/integration/workspace/**
+必要的最小 workspace integration harness
+```
+
+## 禁止修改
+
+```text
+新增 persisted storage abstraction
+Browser file cache/sync engine
+file watcher
+LSP
+```
 
 ## 不要做
 
@@ -340,26 +674,92 @@ Browser 保存文件后，Backend subsequent read 通过同一 `WorkspacePath` /
 
 # W-08 — Workspace Integration Gate
 
-## 验证
+## 目标
+
+建立 M2.5 的正式 production integration gate，证明 Browser → Workspace API → Backend filesystem 的真实链路、安全边界与 lifecycle，而不是只依赖 unit tests。
+
+不为了 Gate 提前开发完整 Workspace Explorer；可以使用最小 Browser integration probe 驱动真实 RemoteWorkspaceFileSystem / API / Backend filesystem。
+
+## 实现
+
+只有 W-08 才允许在 verifier/tests 已实际存在后注册 `verify:m25`。继续复用 Vite+，禁止建设新的 runner、scheduler、DAG、cache 或 validation framework。
+
+目标执行模型：
 
 ```text
-open/save
-create
-rename
-delete
-close
-dirty overlay
-single active workspace scope
-WorkspacePath contract
-canonical URI round-trip
-path traversal protection
-symlink escape protection
-workspace authorization
-client cannot provide host root
-Browser save → Workspace API → Backend FS read-after-save
-single persisted Source of Truth
-host path isolation
-Backend read-after-save consistency
+pnpm install --frozen-lockfile
+vp run verify:m25
+```
+
+`verify:m25` 应保持：
+
+```text
+validate/check/unit once
+compatibility tsc once（如当前 Phase Gate 仍需要）
+build once
+production preview once
+M2.5 regressions once
+temporary workspace root/setup once
+cleanup once
+```
+
+不得通过嵌套 `verify:m2 → verify:m25` 重复 build / preview；M2 sealed regressions 可以在同一 production preview 中直接复用其 regression suites。
+
+## 验证矩阵
+
+```text
+Filesystem
+  list/read/write/create file/create directory/rename/delete
+
+Monaco lifecycle
+  open/edit/dirty/save/close
+  edit during pending save → dirty remains true
+  multiple save requests → persisted write ordering correct
+
+Operations
+  clean file rename/delete
+  dirty file rename/delete rejected
+  directory rename/delete with open descendants rejected
+  old Model/URI/Syntax Session disposed
+
+WorkspacePath / Security
+  root contract
+  absolute/trailing/empty-segment/dot/dotdot/backslash/NUL rejected
+  encoded traversal/backslash/NUL/slash rejected after transport handling
+  symlink intermediate/target cannot escape root
+
+Authorization / Isolation
+  unauthorized workspaceId rejected before Backend adapter creation
+  client cannot provide/override host root
+  one IDE shell keeps one active canonical namespace
+
+Persistence
+  Browser save → Workspace API → Backend FS read-after-save exact content
+  Browser reopen reads persisted Backend content
+
+Architecture
+  single persisted Source of Truth
+  Monaco is unsaved buffer only
+  Dirty State is metadata only
+  host path isolation
+```
+
+## 允许修改
+
+```text
+tests/m25/**
+minimal M2.5 verifier/integration probe
+vite.config.ts（仅注册已经存在的 verify:m25 task）
+```
+
+## 禁止修改
+
+```text
+generic command runner
+task scheduler
+DAG/cache/plugin/validation framework
+LSP implementation
+new persisted storage
 ```
 
 ## Stop Rule

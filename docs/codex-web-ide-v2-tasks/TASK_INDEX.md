@@ -5,7 +5,10 @@
 ```text
 S0 PASS / sealed
 M1 PASS / sealed
-Next: M2 Syntax UX
+M2 PASS / sealed
+M2.5 active
+W-01 PASS / sealed
+Next: W-02 WorkspaceFileSystem Contract
 ```
 
 ## Phase S0
@@ -77,17 +80,17 @@ M2-09 Final Gate → REVIEW
 W-01 WorkspacePath / URI
         ↓
 W-02 WorkspaceFileSystem Contract
-     ┌──┴──────────────┐
-     ↓                 ↓
-W-03 Backend FS   W-04 Remote FS / API
-     └──────┬──────────┘
-            ↓
+        ↓
+W-03 BackendWorkspaceFileSystem
+        ↓
+W-04 Remote FS / API
+        ↓
 W-05 Monaco / Dirty Overlay
-            ↓
+        ↓
 W-06 Operations Lifecycle
-            ↓
+        ↓
 W-07 Backend Visibility
-            ↓
+        ↓
 W-08 Integration Gate → REVIEW
 ```
 

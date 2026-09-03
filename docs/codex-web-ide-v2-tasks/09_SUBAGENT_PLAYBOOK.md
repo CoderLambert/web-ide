@@ -108,17 +108,16 @@ Highlight 请求无界堆入 Worker FIFO
 
 ## M2.5
 
-依赖关系必须保持单一 WorkspaceFileSystem 模型：
+依赖关系保持单一 WorkspaceFileSystem 模型，并以正确性优先于并行速度：
 
 ```text
 W-01 WorkspacePath / URI Contract
               ↓
 W-02 WorkspaceFileSystem Contract
               ↓
-      ┌───────┴────────┐
-      ↓                ↓
-W-03 Backend FS   W-04 Remote FS / API
-      └───────┬────────┘
+W-03 BackendWorkspaceFileSystem
+              ↓
+W-04 Workspace API / RemoteWorkspaceFileSystem
               ↓
 W-05 Monaco + Dirty Overlay
               ↓
@@ -129,9 +128,30 @@ W-07 Backend Visibility
 W-08 Integration Gate
 ```
 
-W-03 Backend adapter 与 W-04 Remote/API adapter 只有在 W-02 接口冻结后才能并行。不得再拆成 `WorkspaceStore` / `FileStore` 两套 persisted storage；Dirty Overlay 不提前并行。
+W-03 与 W-04 不并行：W-04 的真实验收依赖 W-03 已冻结的 Backend persisted behavior、host-path isolation、symlink policy 和 server-side root resolution。不要为了并行引入 mock Backend、placeholder security contract 或重复 filesystem semantics。
 
-W-03 与 W-04 必须共享 W-01 冻结的 WorkspacePath fixtures / security contract，不能各自实现不同 normalization。Backend Security/Test Agent 可独立补 traversal、authorization、symlink escape fixtures，但不要改 frontend contract。
+所有 W Task 必须共享 W-01 WorkspacePath fixtures / security contract；禁止各层自行实现不同 normalization。W-02 只定义 filesystem capability / operation / error semantics，不实现 persisted backend。W-03 只做 secure Backend adapter 与最小 server-owned root resolution boundary；W-04 再做 Remote/API transport。
+
+可并行的只有文件 ownership 真正独立的辅助工作：
+
+- W-03 Implementation Agent 与 Backend Security/Test Agent：测试 Agent 只补 traversal、authorization、symlink fixtures，不改 public contract。
+- W-05 Implementation Agent 与 Dirty/Save Race Test Agent：测试 Agent 不修改 filesystem/API contract。
+- W-08 verifier implementation 与只读 Review Agent；不要多个 Agent 同时修改 `vite.config.ts`。
+
+禁止：
+
+```text
+W-02 未 PASS -> Backend/Remote implementation
+W-03 未 PASS -> W-04 Remote/API
+W-04 未 PASS -> Dirty Overlay
+Dirty Overlay 未 PASS -> Operations Lifecycle
+Backend Visibility 未 PASS -> Integration Gate 宣布 PASS
+WorkspaceStore / FileStore 双 persisted storage
+Browser Store -> sync -> Backend Store
+多个 Agent 自定义不同 WorkspacePath/Error semantics
+为了 W-03 新建 Auth/RBAC/DB framework
+为了 W-08 新建 runner/scheduler/DAG/cache framework
+```
 
 ## M3
 
@@ -250,3 +270,5 @@ cleanup once
 ```
 
 M2 Final Gate 直接在同一 production preview 上运行 S0/M1/M2 regression suites，不通过 `verify:s0 → verify:m1 → verify:m2` 这种嵌套关系重复 build/preview。S0/M1 sealed verifier 保持不变。失败时优先读取 VP Task exit code 和 execution summary，必要时再分析失败 Task 的输出。
+
+M2.5 的 `verify:m25` 只有在 W-08 verifier/tests 已实际实现后才能注册。目标同样保持一次 bootstrap、一次 Project Validation、一次 production build/preview/regressions/cleanup；不得通过嵌套 `verify:m2 → verify:m25` 重复 build/preview。
