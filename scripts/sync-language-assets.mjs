@@ -122,7 +122,7 @@ function artifactPath(root, localArtifactPath) {
 }
 
 function provenanceLine(asset, artifactSha256) {
-  return `- ${asset.kind}: ${asset.repository}@${asset.revision} (${asset.path}), license ${asset.license}; artifact SHA-256 ${artifactSha256}`;
+  return `- ${asset.kind}: ${asset.repository}@${asset.revision} (${asset.path}), license ${asset.license} (LICENSE.${asset.kind}.txt); artifact SHA-256 ${artifactSha256}`;
 }
 
 validateManifest();
@@ -161,7 +161,13 @@ try {
 
     const artifactSha256 = createHash("sha256").update(artifact).digest("hex");
     const license = await readFile(sourceFilePath(sourceRoot, asset.licensePath), "utf8");
-    generatedNotices.push({ asset, artifactSha256, license });
+    const stagedLicensePath = join(
+      stagedRoot,
+      "public/languages/sql/queries",
+      `LICENSE.${asset.kind}.txt`,
+    );
+    await writeFile(stagedLicensePath, license, "utf8");
+    generatedNotices.push({ asset, artifactSha256 });
   }
 
   const notice = [
@@ -171,12 +177,6 @@ try {
     "",
     ...generatedNotices.flatMap(({ asset, artifactSha256 }) => [
       provenanceLine(asset, artifactSha256),
-      "",
-    ]),
-    ...generatedNotices.flatMap(({ asset, license }) => [
-      `## ${asset.kind} — ${asset.license}`,
-      "",
-      license.trimEnd(),
       "",
     ]),
   ].join("\n");
@@ -189,6 +189,11 @@ try {
     await mkdir(dirname(destination), { recursive: true });
     await copyFile(artifactPath(stagedRoot, asset.localArtifactPath), destination);
     console.log(`Synced ${asset.localArtifactPath}`);
+    await copyFile(
+      join(stagedRoot, "public/languages/sql/queries", `LICENSE.${asset.kind}.txt`),
+      join(projectRoot, "public/languages/sql/queries", `LICENSE.${asset.kind}.txt`),
+    );
+    console.log(`Synced /languages/sql/queries/LICENSE.${asset.kind}.txt`);
   }
   await copyFile(
     stagedNoticePath,

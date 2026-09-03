@@ -12,8 +12,15 @@
         "id": "sql-number-predicate-javascript-regexp",
         "description": "Replace the Tree-sitter CLI %d shorthand with a JavaScript-compatible digit class for web-tree-sitter match? execution.",
         "search": "%d",
-        "replace": "\\d",
+        "replace": "\\\\d",
         "expectedMatches": 3
+      },
+      {
+        "id": "sql-float-predicate-javascript-regexp-escape",
+        "description": "Preserve the literal dot escape after Tree-sitter query string decoding so the JavaScript RegExp cannot match integers as floats.",
+        "search": "\\.",
+        "replace": "\\\\.",
+        "expectedMatches": 1
       }
     ],
     "expectedCaptures": ["@keyword", "@string", "@number", "@float", "@comment", "@function.call"]

@@ -9,6 +9,11 @@ export default defineConfig({
         command: ["vp check", "vp test run tests/unit"],
         cache: false,
       },
+      "verify:language-assets": {
+        command: "node scripts/verify-language-assets.mjs",
+        dependsOn: ["validate"],
+        cache: false,
+      },
     },
   },
   test: {

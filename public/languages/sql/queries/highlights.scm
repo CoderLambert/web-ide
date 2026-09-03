@@ -35,10 +35,10 @@
 (marginalia) @comment
 
 ((literal) @number
-   (#match? @number "^[-+]?\d+$"))
+   (#match? @number "^[-+]?\\d+$"))
 
 ((literal) @float
-  (#match? @float "^[-+]?\d*\.\d*$"))
+  (#match? @float "^[-+]?\\d*\\.\\d*$"))
 
 (parameter) @parameter
 
