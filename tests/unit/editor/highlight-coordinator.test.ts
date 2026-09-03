@@ -4,7 +4,7 @@ import {
   HighlightCoordinator,
   createSemanticHighlightProvider,
 } from "../../../src/editor/monaco/highlight-coordinator";
-import type { SyntaxToken } from "../../../src/syntax/types";
+import { SYNTAX_TOKEN_TYPES, type SyntaxToken } from "../../../src/syntax/types";
 import type { HighlightsResult, WorkerResponse } from "../../../src/syntax/tree-sitter/protocol";
 import type { TreeSitterClientRequest } from "../../../src/syntax/tree-sitter/client";
 
@@ -158,7 +158,11 @@ describe("HighlightCoordinator", () => {
     await flushPromises();
 
     const semanticTokens = provider.provideDocumentSemanticTokens(
-      { getVersionId: () => version } as never,
+      {
+        getVersionId: () => version,
+        getLineCount: () => 1,
+        getLineLength: () => 6,
+      } as never,
       null,
       {} as never,
     );
@@ -168,5 +172,61 @@ describe("HighlightCoordinator", () => {
     });
     provider.dispose();
     version = 2;
+  });
+
+  it("splits multiline tokens into sorted single-line semantic tokens", async () => {
+    let version = 1;
+    const client = createClient();
+    const coordinator = new HighlightCoordinator({
+      client,
+      sessionId: "session-1",
+      documentUri: "opaque://query.sql",
+      getDocumentVersion: () => version,
+    });
+    const monaco = { Emitter: FakeEmitter } as never;
+    const provider = createSemanticHighlightProvider(monaco, coordinator);
+    const commentType = SYNTAX_TOKEN_TYPES.indexOf("comment");
+    const token: SyntaxToken = {
+      range: {
+        start: { line: 0, character: 2 },
+        end: { line: 2, character: 3 },
+      },
+      type: "comment",
+    };
+    coordinator.requestLatest();
+    client.deferred[0]?.resolve(result(1, [token]));
+    await flushPromises();
+
+    const semanticTokens = provider.provideDocumentSemanticTokens(
+      {
+        getVersionId: () => version,
+        getLineCount: () => 3,
+        getLineLength: (lineNumber: number) => [6, 4, 5][lineNumber - 1] ?? 0,
+      } as never,
+      null,
+      {} as never,
+    );
+
+    expect(semanticTokens).toMatchObject({
+      resultId: "1",
+      data: new Uint32Array([
+        0,
+        2,
+        4,
+        commentType,
+        0,
+        1,
+        0,
+        4,
+        commentType,
+        0,
+        1,
+        0,
+        3,
+        commentType,
+        0,
+      ]),
+    });
+    provider.dispose();
   });
 });

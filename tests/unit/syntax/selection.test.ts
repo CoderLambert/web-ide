@@ -4,8 +4,34 @@ import {
   collectSelectionPath,
   textPositionToTreeSitterPoint,
 } from "../../../src/syntax/tree-sitter/worker/selection";
+import type { TextRange } from "../../../src/syntax/types";
 import type { DocumentSession } from "../../../src/syntax/tree-sitter/worker/document-session";
 import type { Node, Tree } from "web-tree-sitter";
+
+function containsRange(inner: TextRange, outer: TextRange): boolean {
+  const startsBefore =
+    outer.start.line < inner.start.line ||
+    (outer.start.line === inner.start.line && outer.start.character <= inner.start.character);
+  const endsAfter =
+    outer.end.line > inner.end.line ||
+    (outer.end.line === inner.end.line && outer.end.character >= inner.end.character);
+  return startsBefore && endsAfter;
+}
+
+function sameRange(left: TextRange, right: TextRange): boolean {
+  return (
+    left.start.line === right.start.line &&
+    left.start.character === right.start.character &&
+    left.end.line === right.end.line &&
+    left.end.character === right.end.character
+  );
+}
+
+const expectedRanges: TextRange[] = [
+  { start: { line: 0, character: 7 }, end: { line: 0, character: 11 } },
+  { start: { line: 0, character: 0 }, end: { line: 0, character: 11 } },
+  { start: { line: 0, character: 0 }, end: { line: 0, character: 22 } },
+];
 
 function fakeNode(
   startColumn: number,
@@ -56,15 +82,14 @@ describe("Tree-sitter selection mapping", () => {
       state: "ready",
     };
 
-    expect(collectSelectionPath(session, { line: 0, character: 8 })).toEqual({
-      ranges: [
-        { start: { line: 0, character: 7 }, end: { line: 0, character: 11 } },
-        { start: { line: 0, character: 7 }, end: { line: 0, character: 11 } },
-        { start: { line: 0, character: 7 }, end: { line: 0, character: 11 } },
-        { start: { line: 0, character: 7 }, end: { line: 0, character: 11 } },
-        { start: { line: 0, character: 0 }, end: { line: 0, character: 11 } },
-        { start: { line: 0, character: 0 }, end: { line: 0, character: 22 } },
-      ],
-    });
+    const selectionPath = collectSelectionPath(session, { line: 0, character: 8 });
+
+    expect(selectionPath).toEqual({ ranges: expectedRanges });
+    for (let index = 1; index < selectionPath.ranges.length; index += 1) {
+      const inner = selectionPath.ranges[index - 1];
+      const outer = selectionPath.ranges[index];
+      expect(outer === undefined ? false : containsRange(inner, outer)).toBe(true);
+      expect(outer === undefined ? true : sameRange(inner, outer)).toBe(false);
+    }
   });
 });

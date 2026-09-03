@@ -1,6 +1,6 @@
 import type * as Monaco from "monaco-editor/esm/vs/editor/editor.api.js";
 
-import type { SyntaxToken } from "../../syntax/types";
+import { SYNTAX_TOKEN_TYPES, type SyntaxToken } from "../../syntax/types";
 import type { TreeSitterClientRequest } from "../../syntax/tree-sitter/client";
 import type { HighlightsResult, WorkerResponse } from "../../syntax/tree-sitter/protocol";
 
@@ -153,46 +153,87 @@ export class HighlightCoordinator {
   }
 }
 
-const SEMANTIC_TOKEN_TYPES = [
-  "keyword",
-  "string",
-  "number",
-  "comment",
-  "function",
-  "variable",
-  "property",
-  "type",
-  "operator",
-  "punctuation",
-] as const;
+interface EncodedTokenCandidate {
+  line: number;
+  character: number;
+  length: number;
+  tokenType: number;
+}
 
 function encodeSemanticTokens(
+  model: Monaco.editor.ITextModel,
   tokens: readonly SyntaxToken[],
   version: number,
 ): Monaco.languages.SemanticTokens {
-  const data: number[] = [];
-  let previousLine = 0;
-  let previousCharacter = 0;
+  const candidates: EncodedTokenCandidate[] = [];
+
   for (const token of tokens) {
-    const tokenType = SEMANTIC_TOKEN_TYPES.indexOf(token.type);
+    const tokenType = SYNTAX_TOKEN_TYPES.indexOf(token.type);
     if (tokenType < 0) {
       continue;
     }
-    const deltaLine = token.range.start.line - previousLine;
-    const deltaCharacter =
-      deltaLine === 0
-        ? token.range.start.character - previousCharacter
-        : token.range.start.character;
-    const length =
-      token.range.end.line === token.range.start.line
-        ? token.range.end.character - token.range.start.character
-        : 0;
-    if (deltaLine < 0 || deltaCharacter < 0 || length <= 0) {
+
+    const { start, end } = token.range;
+    if (
+      !Number.isInteger(start.line) ||
+      !Number.isInteger(start.character) ||
+      !Number.isInteger(end.line) ||
+      !Number.isInteger(end.character) ||
+      start.line < 0 ||
+      start.character < 0 ||
+      end.line < start.line ||
+      end.character < 0 ||
+      start.line >= model.getLineCount() ||
+      end.line >= model.getLineCount()
+    ) {
       continue;
     }
-    data.push(deltaLine, deltaCharacter, length, tokenType, 0);
-    previousLine = token.range.start.line;
-    previousCharacter = token.range.start.character;
+
+    if (start.line === end.line) {
+      const length = end.character - start.character;
+      if (length > 0) {
+        candidates.push({ line: start.line, character: start.character, length, tokenType });
+      }
+      continue;
+    }
+
+    const firstLineLength = model.getLineLength(start.line + 1) - start.character;
+    if (firstLineLength > 0) {
+      candidates.push({
+        line: start.line,
+        character: start.character,
+        length: firstLineLength,
+        tokenType,
+      });
+    }
+
+    for (let line = start.line + 1; line < end.line; line += 1) {
+      const length = model.getLineLength(line + 1);
+      if (length > 0) {
+        candidates.push({ line, character: 0, length, tokenType });
+      }
+    }
+
+    if (end.character > 0) {
+      candidates.push({ line: end.line, character: 0, length: end.character, tokenType });
+    }
+  }
+
+  candidates.sort((left, right) => left.line - right.line || left.character - right.character);
+
+  const data: number[] = [];
+  let previousLine = 0;
+  let previousCharacter = 0;
+  for (const candidate of candidates) {
+    const deltaLine = candidate.line - previousLine;
+    const deltaCharacter =
+      deltaLine === 0 ? candidate.character - previousCharacter : candidate.character;
+    if (deltaLine < 0 || deltaCharacter < 0) {
+      continue;
+    }
+    data.push(deltaLine, deltaCharacter, candidate.length, candidate.tokenType, 0);
+    previousLine = candidate.line;
+    previousCharacter = candidate.character;
   }
 
   return { resultId: String(version), data: new Uint32Array(data) };
@@ -208,13 +249,13 @@ export function createSemanticHighlightProvider(
   return {
     onDidChange: emitter.event,
     getLegend: () => ({
-      tokenTypes: [...SEMANTIC_TOKEN_TYPES],
+      tokenTypes: [...SYNTAX_TOKEN_TYPES],
       tokenModifiers: [],
     }),
     provideDocumentSemanticTokens: (model) => {
       const version = model.getVersionId();
       coordinator.requestLatest(version);
-      return encodeSemanticTokens(coordinator.getTokens(version), version);
+      return encodeSemanticTokens(model, coordinator.getTokens(version), version);
     },
     releaseDocumentSemanticTokens: () => undefined,
     dispose: () => {

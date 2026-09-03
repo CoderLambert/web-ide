@@ -1,8 +1,17 @@
 import type { Node, Point } from "web-tree-sitter";
 
-import type { SyntaxSelectionPath, TextPosition } from "../../types";
+import type { SyntaxSelectionPath, TextPosition, TextRange } from "../../types";
 import type { DocumentSession } from "./document-session";
 import { treeSitterNodeToTextRange } from "./text-range";
+
+function sameRange(left: TextRange, right: TextRange): boolean {
+  return (
+    left.start.line === right.start.line &&
+    left.start.character === right.start.character &&
+    left.end.line === right.end.line &&
+    left.end.character === right.end.character
+  );
+}
 
 function lineAt(text: string, row: number): string {
   let currentRow = 0;
@@ -58,7 +67,10 @@ export function collectSelectionPath(
       range.start.line < range.end.line ||
       (range.start.line === range.end.line && range.start.character < range.end.character)
     ) {
-      ranges.push(range);
+      const previousRange = ranges[ranges.length - 1];
+      if (previousRange === undefined || !sameRange(previousRange, range)) {
+        ranges.push(range);
+      }
     }
     node = node.parent;
   }
