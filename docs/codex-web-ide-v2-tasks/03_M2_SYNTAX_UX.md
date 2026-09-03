@@ -638,8 +638,8 @@ vp run verify:m2
 
 ```text
 vp run validate
-→ tsc --noEmit (compatibility check)
 → verify-language-assets
+→ tsc --noEmit (compatibility check)
 → vp build
 → production preview
 → S0 regression / M1 regression / M2 E2E
