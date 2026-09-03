@@ -208,6 +208,10 @@ export class SqlLabSyntaxRuntime {
     return this.#selectionProvider;
   }
 
+  get registry(): DocumentSyntaxCapabilityRegistry {
+    return this.#registry;
+  }
+
   dispose(): void {
     if (this.#disposed) {
       return;
