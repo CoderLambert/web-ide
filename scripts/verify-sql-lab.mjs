@@ -91,6 +91,7 @@ const gateEnvironment = {
   WEB_IDE_WORKSPACE_ID: workspaceId,
   WEB_IDE_WORKSPACE_ROOT: workspaceRoot,
   WEB_IDE_WORKSPACE_TOKEN: workspaceToken,
+  WEB_IDE_LOCAL_SESSION_BOOTSTRAP: "1",
   WEB_IDE_SQL_LAB_DATABASE_PATH: databasePath,
 };
 let preview;

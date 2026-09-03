@@ -31,15 +31,6 @@ async function postSqlLab(
 }
 
 async function openSqlLab(page: Page): Promise<void> {
-  await page.context().addCookies([
-    {
-      name: "web_ide_workspace_token",
-      value: workspaceToken,
-      url: baseUrl,
-      httpOnly: true,
-      sameSite: "Strict",
-    },
-  ]);
   await page.goto(`${baseUrl}/sql-lab`);
   await expect(page.locator('[data-testid="sql-lab-state"]')).toHaveText("ready", {
     timeout: 30_000,
@@ -191,7 +182,25 @@ test("proves the production SQL Lab API and browser flow", async ({ page, reques
   });
   expect(extraField.response.status()).toBe(400);
 
+  expect(
+    (await page.context().cookies(baseUrl)).some(
+      (cookie) => cookie.name === "web_ide_workspace_token",
+    ),
+  ).toBe(false);
+  const bootstrap = await request.post("/api/workspace/session");
+  expect(bootstrap.status()).toBe(204);
+  expect(await bootstrap.text()).toBe("");
+
   await openSqlLab(page);
+  const sessionCookie = (await page.context().cookies(baseUrl)).find(
+    (cookie) => cookie.name === "web_ide_workspace_token",
+  );
+  expect(sessionCookie).toMatchObject({
+    httpOnly: true,
+    name: "web_ide_workspace_token",
+    path: "/",
+    sameSite: "Strict",
+  });
   await expect(page.locator('[data-testid="sql-lab-editor"] .monaco-editor')).toHaveCount(1);
   await expect(page.locator('[data-testid="sql-lab-schema"]')).toContainText("customers");
 

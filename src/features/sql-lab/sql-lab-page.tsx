@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 
 import { SqlLabClient, SqlLabClientError } from "@/features/sql-lab/client/sql-lab-client";
+import { bootstrapWorkspaceSession } from "@/features/sql-lab/client/workspace-session-client";
 import { SqlLabEditor } from "@/features/sql-lab/editor/sql-lab-editor";
 import type { SqlQuerySourceMode } from "@/features/sql-lab/query-source";
 import { SqlResults } from "@/features/sql-lab/results/sql-results";
@@ -18,10 +19,34 @@ export function SqlLabPage() {
   const [schemaError, setSchemaError] = useState<SqlLabError>();
   const [schemaLoading, setSchemaLoading] = useState(false);
   const [active, setActive] = useState(false);
+  const [initializationState, setInitializationState] = useState<
+    "bootstrapping" | "ready" | "error"
+  >("bootstrapping");
+  const [initializationError, setInitializationError] = useState("");
   clientRef.current ??= new SqlLabClient({ workspaceId: SQL_LAB_WORKSPACE_ID });
 
   useEffect(() => {
-    void refreshSchema();
+    let cancelled = false;
+    void bootstrapWorkspaceSession()
+      .then(() => refreshSchema())
+      .then(() => {
+        if (!cancelled) {
+          setInitializationState("ready");
+        }
+      })
+      .catch((bootstrapError: unknown) => {
+        if (!cancelled) {
+          setInitializationState("error");
+          setInitializationError(
+            bootstrapError instanceof Error
+              ? bootstrapError.message
+              : "Workspace session bootstrap failed.",
+          );
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   async function refreshSchema(): Promise<void> {
@@ -198,6 +223,25 @@ export function SqlLabPage() {
         setActive(false);
       }
     }
+  }
+
+  if (initializationState === "bootstrapping") {
+    return (
+      <main data-testid="sql-lab-initialization">
+        <p data-testid="sql-lab-state">bootstrapping</p>
+      </main>
+    );
+  }
+
+  if (initializationState === "error") {
+    return (
+      <main data-testid="sql-lab-initialization">
+        <p data-testid="sql-lab-state">error</p>
+        <p aria-live="polite" data-testid="sql-lab-session-error">
+          {initializationError}
+        </p>
+      </main>
+    );
   }
 
   return (
