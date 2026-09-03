@@ -302,11 +302,32 @@ Path security 不能只检查字符串 `..`。对 existing target 或 create/ren
 
 当前安全假设：workspace root 由 Backend/部署环境控制，不允许不可信本地进程与 IDE 同时恶意替换 filesystem entry。若未来 threat model 包含这种并发本地攻击，应依赖 jail/container/OS isolation，而不是在 M2.5 自研新的低层 filesystem primitive。
 
+### Security Acceptance Evidence（冻结）
+
+W-03 的 symlink / containment PASS 必须基于真实临时 filesystem，而不是只测试字符串 helper：
+
+```text
+real temporary workspace root
++ real files/directories
++ real symlink entries created through Node filesystem
++ real BackendWorkspaceFileSystem operations
+```
+
+至少分别证明：
+
+- existing target 的 real resolution 不能逃逸 root。
+- create/rename destination parent 的 real resolution 不能逃逸 root。
+- intermediate symlink / target symlink 均被拒绝。
+- symlink 指向 workspace 外部时无法 read/write/create/rename/delete 逃逸。
+
+mock `lstat` / `realpath` / path helper 的 unit test 可以作为补充，但**不能作为 W-03 symlink/containment 的唯一验收证据**。
+
 ## 验证
 
 - W-01 WorkspacePath fixtures 在 Backend 重复执行同一语义验证。
 - absolute / traversal / encoded traversal 不能逃逸 Workspace。
 - symlink intermediate / target 被拒绝；list 不暴露 unsupported symlink entry。
+- 使用真实 temporary filesystem / real symlink 完成 containment security tests。
 - rename/delete/create 与 W-02 operation semantics 一致。
 - workspace root containment 正确。
 - host path 不进入 Domain/Protocol/响应 DTO。
@@ -460,6 +481,32 @@ await WorkspaceFileSystem.writeFile(path, savedContent)
 
 因此旧 save response 既不能清除较新的 dirty state，也不能通过 out-of-order write 把 Backend persisted content 回退到旧版本。
 
+### Save Acceptance Evidence（冻结）
+
+W-05 必须使用可控的 deferred/blocked `WorkspaceFileSystem.writeFile` 测试真实异步时序，而不是只断言同步调用顺序。测试至少主动制造：
+
+```text
+save(N) pending
+→ edit to N+1
+→ complete save(N)
+
+save(N) pending
+→ request save(N+1)
+→ release writes in controlled order
+
+save(N) rejects
+→ save(N+1) continues and succeeds
+```
+
+验收必须同时断言：
+
+- dirty state 最终值正确。
+- Backend/persisted test adapter 的最终内容是最新成功保存版本。
+- 第二次 persisted write 不会绕过 per-model serialization 提前执行。
+- 第一次 save failure 不会让后续 save 永久停在 rejected chain。
+
+只检查“调用过 `writeFile`”或只检查 queue 数量，不足以作为 W-05 PASS 证据。
+
 ## 验证
 
 ```text
@@ -586,11 +633,24 @@ dispose Monaco Model
 
 如果未来实现 workspace switch，必须先明确 dirty overlay 的 save/discard/cancel 处理，再 dispose 旧 Workspace state；不要同时保留两个 `file:///workspace/...` namespace。
 
+### Lifecycle Acceptance Evidence（冻结）
+
+W-06 不能只验证 Map/registry 中“看不到旧 key”。针对 clean open file rename/delete/close，必须证明旧运行时资源真的失效：
+
+- old Monaco Model 已 dispose，不再作为 active model 被复用。
+- old Syntax binding/session 已执行 close/dispose。
+- old URI/session 后续结果不能再刷新新 Model 或 workspace state。
+- rename 后同时只存在 new canonical URI 对应的 active Model/Syntax Session。
+- delete/close 后不存在旧 Model、旧 Syntax Session、旧 dirty metadata 或继续触发的旧 listener/callback。
+
+测试可以使用现有 Syntax client 的可观察 request/close 行为或 active-session instrumentation；不要求为此新增通用 lifecycle framework。
+
 ## 验证
 
 - open/save/create/rename/delete/close 都有 integration test。
 - pending save 期间新编辑不会错误清 dirty。
 - clean file rename 后旧 Path、canonical URI、Model、Syntax Session 不残留。
+- rename/delete/close 明确断言 old Model disposed、old Syntax Session closed，旧结果/回调不再生效。
 - dirty file rename/delete 被拒绝。
 - directory rename/delete 在存在 open descendant 时被拒绝。
 - Backend operation failure 不提前破坏 client identity state。
@@ -710,6 +770,33 @@ cleanup once
 ```
 
 不得通过嵌套 `verify:m2 → verify:m25` 重复 build / preview；M2 sealed regressions 可以在同一 production preview 中直接复用其 regression suites。
+
+### Real-chain Requirement（冻结）
+
+W-08 的核心 persistence/security E2E 不允许用 mock 替代真实链路。必须实际包含：
+
+```text
+real browser context against production preview
+→ real RemoteWorkspaceFileSystem
+→ real Workspace API/HTTP route
+→ real server-side authorization/root-resolution boundary
+→ real BackendWorkspaceFileSystem
+→ real temporary host workspace directory
+```
+
+允许使用受控 test fixture 提供“当前测试用户可访问哪个 workspaceId/root”的 server-owned mapping，但测试**不得绕过 authorization/root-resolution boundary**，也不得把 Backend filesystem 替换成 in-memory/mock store。
+
+以下内容不能作为 W-08 核心证明的替代品：
+
+- mock `fetch`。
+- mock Workspace API handler。
+- mock/in-memory `BackendWorkspaceFileSystem`。
+- 只在 Browser 内断言保存后的 Monaco 内容。
+- 只验证 request payload 而不读取真实 Backend persisted file。
+
+Browser save 后必须由 server/backend 侧通过同一 `WorkspacePath` 对真实 temporary workspace 做 subsequent read，并验证 exact content；Browser reopen 也必须重新经过 Remote/API/Backend 链路读取 persisted content。
+
+临时 workspace root 必须在 Gate 结束时 cleanup，包括测试失败路径；不要依赖人工清理。
 
 ## 验证矩阵
 
