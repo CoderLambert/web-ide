@@ -9,7 +9,8 @@ M2 PASS / sealed
 M2.5 active
 W-01 PASS / sealed
 W-02 PASS / sealed
-Next: W-03 BackendWorkspaceFileSystem
+W-03 PASS / sealed
+Next: W-04 Workspace API / RemoteWorkspaceFileSystem
 ```
 
 ## Phase S0
