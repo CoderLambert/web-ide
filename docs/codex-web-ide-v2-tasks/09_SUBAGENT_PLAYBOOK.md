@@ -222,10 +222,19 @@ vp staged → commit → push
 vp run validate
 ```
 
-有额外业务验证时只执行指定专项 Task，例如 `vp run verify:language-assets`。阶段最终验收只使用稳定 VP Task 入口：
+有额外业务验证时，只能执行已经实现并接入 `vite.config.ts` 的专项 Task。当前 M2 assets verifier 和 `tests/m2` 尚未实现，因此 `verify:language-assets`、`verify:m2` 都是未来约定，当前不可调用。
 
-```bash
-vp run verify:m2
+Phase Final Gate 的目标是：
+
+```text
+install once
+check once
+unit once
+tsc once
+build once
+preview once
+phase regressions once
+cleanup once
 ```
 
-Validation 和 staged hook 都只验证，不使用 `--fix`，不自动修改源码。Phase Gate 应一次 build、一次 preview，并在该 preview 上运行 S0/M1 回归及当前阶段 E2E；不通过 `verify:s0 → verify:m1 → verify:m2` 这种嵌套关系重复执行 build/preview。失败时优先读取 VP Task exit code 和 execution summary，必要时再分析失败 Task 的输出。
+M2 Phase Gate 尚未启用。待 M2 assets verifier 与 `tests/m2` 真正实现后，再注册正式入口；不通过 `verify:s0 → verify:m1 → verify:m2` 这种嵌套关系重复执行 build/preview。失败时优先读取 VP Task exit code 和 execution summary，必要时再分析失败 Task 的输出。

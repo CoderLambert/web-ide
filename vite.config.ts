@@ -9,21 +9,6 @@ export default defineConfig({
         command: ["vp check", "vp test run tests/unit"],
         cache: false,
       },
-      "verify:language-assets": {
-        command: ["vp run validate", "node scripts/verify-language-assets.mjs"],
-        cache: false,
-      },
-      "verify:m2": {
-        command: [
-          "pnpm install --frozen-lockfile",
-          "vp run validate",
-          "tsc --noEmit",
-          "node scripts/verify-language-assets.mjs",
-          "vp build",
-          "node scripts/verify-production-preview.mjs tests/s0 tests/m1 tests/m2",
-        ],
-        cache: false,
-      },
     },
   },
   test: {
