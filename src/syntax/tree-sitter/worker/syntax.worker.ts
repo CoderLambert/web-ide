@@ -2,6 +2,8 @@ import { sqlLanguageDefinition } from "../../../languages/sql/definition";
 import type {
   GetHighlights,
   HighlightsResult,
+  FoldingRangesResult,
+  GetFoldingRanges,
   InspectDocument,
   InspectResult,
   ParseResult,
@@ -9,6 +11,7 @@ import type {
 } from "../protocol";
 import { DocumentManager, DocumentManagerError } from "./document-manager";
 import { collectHighlightTokens } from "./highlight";
+import { collectFoldingRanges } from "./folding";
 import { AstInspector } from "./inspector";
 import { WorkerRuntime } from "./runtime";
 import { installWorkerHost } from "./worker";
@@ -111,6 +114,8 @@ function startWorker(workerGeneration: number): void {
         }
         case "GetHighlights":
           return getHighlightsForRequest(request, documents, runtime);
+        case "GetFoldingRanges":
+          return getFoldingRangesForRequest(request, documents, runtime);
       }
     },
   });
@@ -162,6 +167,55 @@ async function getHighlightsForRequest(
     documentUri: session.documentUri,
     documentVersion: session.documentVersion,
     tokens: collectHighlightTokens(session, query),
+  };
+}
+
+async function getFoldingRangesForRequest(
+  request: GetFoldingRanges,
+  documents: DocumentManager,
+  runtime: WorkerRuntime,
+): Promise<FoldingRangesResult> {
+  const session = documents.getSession(request.sessionId);
+  if (session === undefined || session.documentUri !== request.documentUri) {
+    throw new DocumentManagerError(
+      "SESSION_NOT_FOUND",
+      `Session "${request.sessionId}" does not own document "${request.documentUri}".`,
+    );
+  }
+  if (session.state === "desynced") {
+    throw new DocumentManagerError(
+      "RESYNC_REQUIRED",
+      `Session "${request.sessionId}" requires a full document resync.`,
+    );
+  }
+  if (request.expectedVersion !== session.documentVersion) {
+    throw new DocumentManagerError(
+      "VERSION_MISMATCH",
+      `Expected document version ${request.expectedVersion}, found ${session.documentVersion}.`,
+    );
+  }
+
+  const languageRuntime = await runtime.loadLanguage(session.languageId);
+  const query = await languageRuntime.getQuery("folds");
+  if (
+    documents.getSession(request.sessionId) !== session ||
+    request.expectedVersion !== session.documentVersion
+  ) {
+    throw new DocumentManagerError(
+      "VERSION_MISMATCH",
+      `Document "${request.documentUri}" changed before folding ranges completed.`,
+    );
+  }
+
+  return {
+    type: "FoldingRangesResult",
+    protocolVersion: request.protocolVersion,
+    workerGeneration: request.workerGeneration,
+    requestId: request.requestId,
+    sessionId: session.sessionId,
+    documentUri: session.documentUri,
+    documentVersion: session.documentVersion,
+    ranges: collectFoldingRanges(session, query),
   };
 }
 
