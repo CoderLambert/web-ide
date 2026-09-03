@@ -34,10 +34,18 @@ function loadMonacoRuntime(): Promise<typeof Monaco> {
 export interface SqlLabEditorProps {
   workspaceId: string;
   onRun?: (mode: SqlQuerySourceMode, sql: string) => Promise<void>;
+  onExplain?: (mode: SqlQuerySourceMode, sql: string) => Promise<void>;
+  onReset?: () => Promise<void>;
   operationActive?: boolean;
 }
 
-export function SqlLabEditor({ workspaceId, onRun, operationActive = false }: SqlLabEditorProps) {
+export function SqlLabEditor({
+  workspaceId,
+  onRun,
+  onExplain,
+  onReset,
+  operationActive = false,
+}: SqlLabEditorProps) {
   const hostRef = useRef<HTMLDivElement>(null);
   const managerRef = useRef<WorkspaceDocumentManager | undefined>(undefined);
   const fileSystemRef = useRef<RemoteWorkspaceFileSystem | undefined>(undefined);
@@ -47,13 +55,21 @@ export function SqlLabEditor({ workspaceId, onRun, operationActive = false }: Sq
   const modelListenerRef = useRef<Monaco.IDisposable | undefined>(undefined);
   const openFileRef = useRef<(path: WorkspacePath) => Promise<void>>(async () => undefined);
   const runQueryRef = useRef<(mode: SqlQuerySourceMode) => Promise<void>>(async () => undefined);
+  const explainQueryRef = useRef<(mode: SqlQuerySourceMode) => Promise<void>>(
+    async () => undefined,
+  );
+  const resetRef = useRef<() => Promise<void>>(async () => undefined);
   const onRunRef = useRef<SqlLabEditorProps["onRun"]>(onRun);
+  const onExplainRef = useRef<SqlLabEditorProps["onExplain"]>(onExplain);
+  const onResetRef = useRef<SqlLabEditorProps["onReset"]>(onReset);
   const [files, setFiles] = useState<WorkspacePath[]>([]);
   const [activePath, setActivePath] = useState<WorkspacePath>();
   const [dirty, setDirty] = useState(false);
   const [state, setState] = useState<"loading" | "ready" | "error">("loading");
   const [error, setError] = useState("");
   onRunRef.current = onRun;
+  onExplainRef.current = onExplain;
+  onResetRef.current = onReset;
 
   useEffect(() => {
     const host = hostRef.current;
@@ -118,11 +134,15 @@ export function SqlLabEditor({ workspaceId, onRun, operationActive = false }: Sq
 
     openFileRef.current = openFile;
     runQueryRef.current = runQuery;
+    explainQueryRef.current = explainQuery;
+    resetRef.current = reset;
 
     return () => {
       cancelled = true;
       openFileRef.current = async () => undefined;
       runQueryRef.current = async () => undefined;
+      explainQueryRef.current = async () => undefined;
+      resetRef.current = async () => undefined;
       modelListenerRef.current?.dispose();
       editorRef.current?.setModel(null);
       editorRef.current?.dispose();
@@ -169,7 +189,11 @@ export function SqlLabEditor({ workspaceId, onRun, operationActive = false }: Sq
       setError("");
     }
 
-    async function runQuery(mode: SqlQuerySourceMode): Promise<void> {
+    async function resolveAndInvoke(
+      mode: SqlQuerySourceMode,
+      callback: ((mode: SqlQuerySourceMode, sql: string) => Promise<void>) | undefined,
+      action: string,
+    ): Promise<void> {
       const editor = editorRef.current;
       const runtime = syntaxRuntimeRef.current;
       if (editor === undefined || runtime === undefined) {
@@ -178,16 +202,36 @@ export function SqlLabEditor({ workspaceId, onRun, operationActive = false }: Sq
       try {
         const sql = await resolveSqlQuerySource(mode, editor, runtime.registry);
         if (sql === undefined || sql.trim() === "") {
-          setError(`No SQL source is available for Run ${mode}.`);
+          setError(`No SQL source is available for ${action} ${mode}.`);
           return;
         }
-        if (onRunRef.current === undefined) {
-          setError("SQL execution is not configured.");
+        if (callback === undefined) {
+          setError(`SQL ${action.toLowerCase()} is not configured.`);
           return;
         }
-        await onRunRef.current(mode, sql);
+        await callback(mode, sql);
       } catch (runError: unknown) {
         setError(runError instanceof Error ? runError.message : "Unable to resolve SQL source.");
+      }
+    }
+
+    async function runQuery(mode: SqlQuerySourceMode): Promise<void> {
+      await resolveAndInvoke(mode, onRunRef.current, "Run");
+    }
+
+    async function explainQuery(mode: SqlQuerySourceMode): Promise<void> {
+      await resolveAndInvoke(mode, onExplainRef.current, "Explain");
+    }
+
+    async function reset(): Promise<void> {
+      if (onResetRef.current === undefined) {
+        setError("SQL reset is not configured.");
+        return;
+      }
+      try {
+        await onResetRef.current();
+      } catch (resetError: unknown) {
+        setError(resetError instanceof Error ? resetError.message : "Unable to reset SQL Lab.");
       }
     }
   }, [workspaceId]);
@@ -278,6 +322,31 @@ export function SqlLabEditor({ workspaceId, onRun, operationActive = false }: Sq
             type="button"
           >
             Run All
+          </button>
+        </fieldset>
+        <fieldset
+          disabled={operationActive || state !== "ready"}
+          style={{ border: 0, display: "flex", gap: 8, margin: 0, padding: 0 }}
+        >
+          <legend>Schema</legend>
+          <button
+            data-testid="sql-lab-explain-current"
+            disabled={activePath === undefined}
+            onClick={() => void explainQueryRef.current("current")}
+            type="button"
+          >
+            Explain Current
+          </button>
+          <button
+            data-testid="sql-lab-explain-selection"
+            disabled={activePath === undefined}
+            onClick={() => void explainQueryRef.current("selection")}
+            type="button"
+          >
+            Explain Selection
+          </button>
+          <button data-testid="sql-lab-reset" onClick={() => void resetRef.current()} type="button">
+            Reset Demo
           </button>
         </fieldset>
       </div>

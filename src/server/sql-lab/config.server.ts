@@ -1,14 +1,17 @@
 import { handleSqlLabApiRequest } from "@/server/sql-lab/api";
+import { assertDatabasePathOutsideWorkspace } from "@/server/sql-lab/database-path";
 import { SqlLabService } from "@/server/sql-lab/service";
 
 export interface ServerSqlLabConfiguration {
   workspaceId?: string;
+  workspaceRoot?: string;
   token?: string;
   databasePath?: string;
 }
 
 const configuredHandler = createSqlLabApiHandler({
   workspaceId: process.env.WEB_IDE_WORKSPACE_ID,
+  workspaceRoot: process.env.WEB_IDE_WORKSPACE_ROOT,
   token: process.env.WEB_IDE_WORKSPACE_TOKEN,
   databasePath: process.env.WEB_IDE_SQL_LAB_DATABASE_PATH,
 });
@@ -20,7 +23,11 @@ export function handleConfiguredSqlLabApiRequest(request: Request): Promise<Resp
 export function createSqlLabApiHandler(
   configuration: ServerSqlLabConfiguration,
 ): (request: Request) => Promise<Response> {
-  const service = new SqlLabService({ databasePath: configuration.databasePath ?? "" });
+  const databasePath = configuration.databasePath ?? "";
+  if (databasePath !== "" && configuration.workspaceRoot !== undefined) {
+    assertDatabasePathOutsideWorkspace(databasePath, configuration.workspaceRoot);
+  }
+  const service = new SqlLabService({ databasePath });
   return (request) =>
     handleSqlLabApiRequest(request, {
       service,

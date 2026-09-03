@@ -4,6 +4,7 @@ import type {
   SqlLabWorkerRequest,
   SqlLabWorkerResponse,
 } from "@/server/sql-lab/execution-protocol";
+import { resetSqliteDatabase } from "@/server/sql-lab/reset";
 import { SqliteEngine, SqliteEngineError } from "@/server/sql-lab/sqlite-engine";
 
 export const SQL_LAB_WORKER_ENTRY_URL = import.meta.url;
@@ -42,8 +43,8 @@ function execute(request: SqlLabWorkerRequest, sqlite: SqliteEngine): SqlLabWork
       };
     case "reset":
       return {
-        ok: false,
-        error: { code: "INTERNAL_ERROR", message: "SQL Lab reset is not available yet." },
+        ok: true,
+        value: { operation: "reset", schema: resetSqliteDatabase(request.databasePath) },
       };
   }
 }
