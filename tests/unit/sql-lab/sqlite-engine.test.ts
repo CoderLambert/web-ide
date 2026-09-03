@@ -18,6 +18,10 @@ const withDatabase = (run: (path: string) => void): void => {
 };
 
 describe("SQL Lab SQLite engine", () => {
+  it("rejects a blank database path", () => {
+    expect(() => new SqliteEngine({ databasePath: " " })).toThrowError(SqliteEngineError);
+  });
+
   it("executes multiple statements using SQLite sourceSQL boundaries", () => {
     withDatabase((path) => {
       const engine = new SqliteEngine({ databasePath: path });

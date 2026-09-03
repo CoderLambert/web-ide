@@ -1,11 +1,11 @@
-import { isMainThread, parentPort, workerData } from "node:worker_threads";
+import { isMainThread, parentPort, Worker, workerData } from "node:worker_threads";
 
 import type {
   SqlLabWorkerRequest,
   SqlLabWorkerResponse,
 } from "@/server/sql-lab/execution-protocol";
-import { resetSqliteDatabase } from "@/server/sql-lab/reset";
-import { SqliteEngine, SqliteEngineError } from "@/server/sql-lab/sqlite-engine";
+import { publicSqlLabError } from "@/server/sql-lab/public-error";
+import type { SqliteEngine } from "@/server/sql-lab/sqlite-engine";
 
 export const SQL_LAB_WORKER_ENTRY_URL = import.meta.url;
 
@@ -14,14 +14,44 @@ if (!isMainThread) {
     throw new Error("SQL Lab execution worker requires a parent port.");
   }
 
-  const request = workerData as SqlLabWorkerRequest;
+  const request = workerData as SqlLabWorkerRequest & { __sqlLabNested?: boolean };
+  if (request.__sqlLabNested !== true) {
+    const port = parentPort;
+    const nestedWorker = new Worker(new URL(import.meta.url), {
+      workerData: { ...request, __sqlLabNested: true },
+    });
+    nestedWorker.once("message", (message: unknown) => port.postMessage(message));
+    nestedWorker.once("error", (error) => {
+      port.postMessage({
+        ok: false,
+        error: toWorkerError(error),
+      } satisfies SqlLabWorkerResponse);
+    });
+  } else {
+    void runRequest(request);
+  }
+}
+
+async function runRequest(request: SqlLabWorkerRequest): Promise<void> {
   let engine: SqliteEngine | undefined;
   try {
-    engine = new SqliteEngine({ databasePath: request.databasePath });
-    const response: SqlLabWorkerResponse = execute(request, engine);
-    parentPort.postMessage(response);
+    const [{ resetSqliteDatabase }, { SqliteEngine }] = await Promise.all([
+      import("@/server/sql-lab/reset"),
+      import("@/server/sql-lab/sqlite-engine"),
+    ]);
+    let response: SqlLabWorkerResponse;
+    if (request.operation === "reset") {
+      response = {
+        ok: true,
+        value: { operation: "reset", schema: resetSqliteDatabase(request.databasePath) },
+      };
+    } else {
+      engine = new SqliteEngine({ databasePath: request.databasePath });
+      response = execute(request, engine);
+    }
+    parentPort?.postMessage(response);
   } catch (error) {
-    parentPort.postMessage({
+    parentPort?.postMessage({
       ok: false,
       error: toWorkerError(error),
     } satisfies SqlLabWorkerResponse);
@@ -30,7 +60,9 @@ if (!isMainThread) {
   }
 }
 
-function execute(request: SqlLabWorkerRequest, sqlite: SqliteEngine): SqlLabWorkerResponse {
+type EngineWorkerRequest = Exclude<SqlLabWorkerRequest, { operation: "reset" }>;
+
+function execute(request: EngineWorkerRequest, sqlite: SqliteEngine): SqlLabWorkerResponse {
   switch (request.operation) {
     case "execute":
       return { ok: true, value: { operation: "execute", execution: sqlite.execute(request.sql) } };
@@ -41,22 +73,10 @@ function execute(request: SqlLabWorkerRequest, sqlite: SqliteEngine): SqlLabWork
         ok: true,
         value: { operation: "explain", result: sqlite.explain(request.sql) },
       };
-    case "reset":
-      return {
-        ok: true,
-        value: { operation: "reset", schema: resetSqliteDatabase(request.databasePath) },
-      };
   }
+  throw new Error("Unsupported SQL Lab engine request.");
 }
 
-function toWorkerError(error: unknown): {
-  code: "DATABASE_UNAVAILABLE" | "INVALID_REQUEST" | "INTERNAL_ERROR";
-  message: string;
-} {
-  if (error instanceof SqliteEngineError) {
-    if (error.code === "DATABASE_UNAVAILABLE" || error.code === "INVALID_REQUEST") {
-      return { code: error.code, message: error.message };
-    }
-  }
-  return { code: "INTERNAL_ERROR", message: "SQL Lab execution failed." };
+function toWorkerError(error: unknown) {
+  return publicSqlLabError(error);
 }

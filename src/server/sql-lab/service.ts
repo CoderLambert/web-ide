@@ -1,10 +1,11 @@
 import type { SqlLabError, SqlLabRequest, SqlLabResponse } from "@/sql-lab/contract";
 import type { SqlLabWorkerRequest } from "@/server/sql-lab/execution-protocol";
-import { SqliteEngineError } from "@/server/sql-lab/sqlite-engine";
 import {
   SqlLabWorkerExecutionHost,
   type SqlLabExecutionHost,
 } from "@/server/sql-lab/execution-host";
+
+export { publicSqlLabError } from "@/server/sql-lab/public-error";
 
 export interface SqlLabServiceOptions {
   databasePath: string;
@@ -56,23 +57,4 @@ function toWorkerRequest(request: SqlLabRequest, databasePath: string): SqlLabWo
 
 function internalError(): SqlLabError {
   return { code: "INTERNAL_ERROR", message: "SQL Lab execution failed." };
-}
-
-export function publicSqlLabError(error: unknown): SqlLabError {
-  if (error instanceof SqliteEngineError) {
-    switch (error.code) {
-      case "INVALID_REQUEST":
-      case "NO_EXECUTABLE_STATEMENT":
-      case "STATEMENT_LIMIT":
-      case "RESULT_LIMIT":
-      case "QUERY_TIMEOUT":
-      case "SQL_ERROR":
-        return { code: error.code, message: error.message };
-      case "DATABASE_UNAVAILABLE":
-        return { code: error.code, message: "The SQL Lab database is unavailable." };
-      default:
-        return internalError();
-    }
-  }
-  return internalError();
 }

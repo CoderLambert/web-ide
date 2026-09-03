@@ -17,6 +17,10 @@ export class SqlLabWorkerExecutionHost implements SqlLabExecutionHost {
       const worker = new Worker(workerUrl, { workerData: request });
       let settled = false;
       let timeoutId: NodeJS.Timeout | undefined;
+      let response: SqlLabWorkerResponse | undefined;
+      let workerError: Error | undefined;
+      let timedOut = false;
+      let terminationRequested = false;
 
       const settle = (callback: () => void): void => {
         if (settled) {
@@ -29,34 +33,69 @@ export class SqlLabWorkerExecutionHost implements SqlLabExecutionHost {
         callback();
       };
 
-      worker.once("message", (message: unknown) => {
-        if (!isWorkerResponse(message)) {
-          settle(() => reject(new Error("SQL Lab worker returned an invalid response.")));
-          void worker.terminate();
+      const handleExit = (code: number): void => {
+        if (timedOut) {
+          settle(() => resolve(timeoutResponse(request)));
           return;
         }
-        settle(() => resolve(message));
-        void worker.terminate();
-      });
-      worker.once("error", (error) => {
-        settle(() => reject(error));
-      });
-      worker.once("exit", (code) => {
+        if (workerError !== undefined) {
+          settle(() => reject(workerError));
+          return;
+        }
         if (code !== 0) {
           settle(() => reject(new Error(`SQL Lab worker exited with code ${code}.`)));
+          return;
         }
+        if (response === undefined) {
+          settle(() => reject(new Error("SQL Lab worker exited without a response.")));
+          return;
+        }
+        const completedResponse = response;
+        settle(() => resolve(completedResponse));
+      };
+
+      const requestTermination = (): void => {
+        if (terminationRequested) {
+          return;
+        }
+        terminationRequested = true;
+        void worker
+          .terminate()
+          .then((code) => handleExit(code))
+          .catch((error: unknown) => {
+            if (workerError === undefined) {
+              workerError = error instanceof Error ? error : new Error(String(error));
+            }
+          });
+      };
+
+      worker.once("message", (message: unknown) => {
+        if (!isWorkerResponse(message)) {
+          workerError = new Error("SQL Lab worker returned an invalid response.");
+          if (timeoutId !== undefined) {
+            clearTimeout(timeoutId);
+          }
+          requestTermination();
+          return;
+        }
+        response = message;
+        if (timeoutId !== undefined) {
+          clearTimeout(timeoutId);
+        }
+        requestTermination();
       });
+      worker.once("error", (error) => {
+        workerError ??= error;
+        if (timeoutId !== undefined) {
+          clearTimeout(timeoutId);
+        }
+        requestTermination();
+      });
+      worker.once("exit", handleExit);
 
       timeoutId = setTimeout(() => {
-        settle(() => {
-          const termination = worker.terminate();
-          void Promise.race([
-            termination,
-            new Promise((graceResolve) =>
-              setTimeout(graceResolve, SQL_LAB_LIMITS.terminationGraceMs),
-            ),
-          ]).then(() => resolve(timeoutResponse(request)));
-        });
+        timedOut = true;
+        requestTermination();
       }, SQL_LAB_LIMITS.executionTimeoutMs);
     });
   }

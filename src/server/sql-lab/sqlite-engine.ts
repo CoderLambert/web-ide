@@ -115,6 +115,9 @@ export class SqliteEngine {
 
   constructor(options: SqliteEngineOptions) {
     try {
+      if (options.databasePath.trim() === "") {
+        throw new SqliteEngineError("DATABASE_UNAVAILABLE", "The SQL Lab database is unavailable.");
+      }
       this.assertDatabaseSize(options.databasePath);
       this.database = new DatabaseSync(options.databasePath, SQLITE_OPTIONS);
       this.configureDatabase();

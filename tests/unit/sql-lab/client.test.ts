@@ -43,4 +43,44 @@ describe("SQL Lab client", () => {
 
     await expect(client.schema()).rejects.toBeInstanceOf(SqlLabClientError);
   });
+
+  it.each([
+    {
+      operation: "execute",
+      value: { operation: "execute", execution: { status: "completed" } },
+      call: (client: SqlLabClient) => client.execute("SELECT 1"),
+    },
+    {
+      operation: "schema",
+      value: { operation: "schema", schema: { tables: [{ name: "customers" }] } },
+      call: (client: SqlLabClient) => client.schema(),
+    },
+    {
+      operation: "explain",
+      value: { operation: "explain", result: { kind: "query", rows: [] } },
+      call: (client: SqlLabClient) => client.explain("SELECT 1"),
+    },
+    {
+      operation: "reset",
+      value: { operation: "reset", schema: { tables: [], extra: true } },
+      call: (client: SqlLabClient) => client.reset(),
+    },
+  ])("strictly validates the nested $operation response", async ({ value, call }) => {
+    const client = new SqlLabClient({
+      workspaceId: "workspace-1",
+      fetch: async () => Response.json({ ok: true, value }),
+    });
+
+    await expect(call(client)).rejects.toBeInstanceOf(SqlLabClientError);
+  });
+
+  it("rejects unknown error codes", async () => {
+    const client = new SqlLabClient({
+      workspaceId: "workspace-1",
+      fetch: async () =>
+        Response.json({ ok: false, error: { code: "NEW_ERROR", message: "unknown" } }),
+    });
+
+    await expect(client.schema()).rejects.toBeInstanceOf(SqlLabClientError);
+  });
 });

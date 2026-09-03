@@ -116,6 +116,7 @@ try {
     M25_WORKSPACE_ROOT: workspaceRoot,
     M25_WORKSPACE_TOKEN: workspaceToken,
     SQL_LAB_WORKSPACE_ID: workspaceId,
+    SQL_LAB_WORKSPACE_ROOT: workspaceRoot,
     SQL_LAB_WORKSPACE_TOKEN: workspaceToken,
   };
   await run(

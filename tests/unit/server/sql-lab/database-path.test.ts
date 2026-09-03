@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -19,5 +19,29 @@ describe("SQL Lab database path", () => {
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
+  });
+
+  it("resolves symlink ancestors before checking missing database descendants", () => {
+    const root = mkdtempSync(join(tmpdir(), "web-ide-sql-path-symlink-"));
+    const workspace = join(root, "workspace");
+    const linkedWorkspace = join(root, "linked-workspace");
+    mkdirSync(workspace, { recursive: true });
+    symlinkSync(workspace, linkedWorkspace, "dir");
+    try {
+      expect(() =>
+        assertDatabasePathOutsideWorkspace(
+          join(linkedWorkspace, "missing", "demo.sqlite"),
+          workspace,
+        ),
+      ).toThrow("outside the workspace");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects blank paths", () => {
+    expect(() => assertDatabasePathOutsideWorkspace("", "/tmp/workspace")).toThrow(
+      "paths are required",
+    );
   });
 });

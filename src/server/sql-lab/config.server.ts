@@ -1,6 +1,7 @@
 import { handleSqlLabApiRequest } from "@/server/sql-lab/api";
 import { assertDatabasePathOutsideWorkspace } from "@/server/sql-lab/database-path";
 import { SqlLabService } from "@/server/sql-lab/service";
+import type { SqlLabResponse } from "@/sql-lab/contract";
 
 export interface ServerSqlLabConfiguration {
   workspaceId?: string;
@@ -23,11 +24,25 @@ export function handleConfiguredSqlLabApiRequest(request: Request): Promise<Resp
 export function createSqlLabApiHandler(
   configuration: ServerSqlLabConfiguration,
 ): (request: Request) => Promise<Response> {
-  const databasePath = configuration.databasePath ?? "";
-  if (databasePath !== "" && configuration.workspaceRoot !== undefined) {
-    assertDatabasePathOutsideWorkspace(databasePath, configuration.workspaceRoot);
+  const databasePath = configuration.databasePath?.trim() ?? "";
+  const workspaceRoot = configuration.workspaceRoot?.trim() ?? "";
+  const isolated = databasePath !== "" && workspaceRoot !== "";
+  if (isolated) {
+    assertDatabasePathOutsideWorkspace(databasePath, workspaceRoot);
   }
-  const service = new SqlLabService({ databasePath });
+  const service = isolated
+    ? new SqlLabService({ databasePath })
+    : {
+        async run(): Promise<SqlLabResponse> {
+          return {
+            ok: false,
+            error: {
+              code: "DATABASE_UNAVAILABLE",
+              message: "The SQL Lab database is unavailable.",
+            },
+          };
+        },
+      };
   return (request) =>
     handleSqlLabApiRequest(request, {
       service,

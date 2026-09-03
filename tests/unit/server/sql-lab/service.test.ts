@@ -4,7 +4,8 @@ import type {
   SqlLabWorkerRequest,
   SqlLabWorkerResponse,
 } from "@/server/sql-lab/execution-protocol";
-import { SqlLabService } from "@/server/sql-lab/service";
+import { publicSqlLabError, SqlLabService } from "@/server/sql-lab/service";
+import { SqliteEngineError } from "@/server/sql-lab/sqlite-engine";
 
 describe("SQL Lab service", () => {
   it("serializes jobs and keeps the database path server-owned", async () => {
@@ -47,5 +48,22 @@ describe("SQL Lab service", () => {
       "/server/controlled/demo.sqlite",
       "/server/controlled/demo.sqlite",
     ]);
+  });
+
+  it("sanitizes database errors while preserving safe SQL errors", () => {
+    expect(
+      publicSqlLabError(
+        new SqliteEngineError("DATABASE_UNAVAILABLE", "/srv/private/sql-lab.sqlite: EACCES"),
+      ),
+    ).toEqual({
+      code: "DATABASE_UNAVAILABLE",
+      message: "The SQL Lab database is unavailable.",
+    });
+    expect(
+      publicSqlLabError(new SqliteEngineError("SQL_ERROR", 'near "FROM": syntax error')),
+    ).toEqual({
+      code: "SQL_ERROR",
+      message: 'near "FROM": syntax error',
+    });
   });
 });

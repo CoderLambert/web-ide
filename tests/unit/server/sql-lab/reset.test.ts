@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -35,6 +35,18 @@ describe("SQL Lab reset", () => {
       expect(report.results[0]).toMatchObject({ rows: [[4]] });
       expect(resetEngine.health()).toBe(true);
       resetEngine.close();
+      expect(existsSync(path)).toBe(true);
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
+
+  it("restores an existing target when replacement health validation fails", () => {
+    const directory = mkdtempSync(join(tmpdir(), "web-ide-sql07-rollback-"));
+    const path = join(directory, "demo.sqlite");
+    mkdirSync(path);
+    try {
+      expect(() => resetSqliteDatabase(path)).toThrow();
       expect(existsSync(path)).toBe(true);
     } finally {
       rmSync(directory, { recursive: true, force: true });
