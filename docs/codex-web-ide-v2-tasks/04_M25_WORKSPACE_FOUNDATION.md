@@ -456,6 +456,8 @@ await WorkspaceFileSystem.writeFile(path, savedContent)
 
 成功后只有当当前 `model.getVersionId() === savedVersion` 时才能清除 dirty；如果 save 期间发生新编辑，dirty 必须保持 true。write failure 始终保持 dirty。
 
+一次 save failure 不得 poison per-model save sequence；失败请求结束后，后续已排队或新发起的 save 仍必须继续执行。
+
 因此旧 save response 既不能清除较新的 dirty state，也不能通过 out-of-order write 把 Backend persisted content 回退到旧版本。
 
 ## 验证
@@ -478,6 +480,10 @@ dirty remains true
 save(N) + save(N+1)
 persisted writes remain ordered
 latest saved version wins
+
+save(N) fails
+save(N+1) still executes
+successful later save can persist and clear matching dirty version
 ```
 
 ## 允许修改
@@ -715,6 +721,7 @@ Monaco lifecycle
   open/edit/dirty/save/close
   edit during pending save → dirty remains true
   multiple save requests → persisted write ordering correct
+  failed save does not poison later save sequence
 
 Operations
   clean file rename/delete

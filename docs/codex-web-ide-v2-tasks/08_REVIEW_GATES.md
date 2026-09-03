@@ -164,6 +164,7 @@ Dirty State 只保存 dirty/version metadata，不保存第二份未保存正文
 同一 Model persisted save 必须串行，避免 out-of-order write 回退 Backend 内容
 save completion 只有 current model version == captured savedVersion 时才可清 dirty
 save failure 或 save 期间发生新 edit 时 dirty 保持 true
+save failure 不得 poison 后续 per-model save sequence
 
 Filesystem persisted operation success 后再 reconcile Monaco/Syntax derived state
 Backend failure 不提前破坏 client identity state
@@ -199,6 +200,7 @@ W-08 可以使用最小 Browser integration probe，不要求提前开发完整 
 - encoded traversal / symlink 可以逃逸已授权 workspace root → `M2.5 FAIL`
 - 较旧 save response 可以清除较新 dirty state → `M2.5 FAIL`
 - 并发 save 可以因 out-of-order write 把 Backend persisted content 回退 → `M2.5 FAIL`
+- 单次 save failure 可以永久 poison 后续 per-model save sequence → `M2.5 FAIL`
 - dirty file rename/delete 未经明确 save/discard/close 就执行 → `M2.5 FAIL`
 - directory rename/delete 静默迁移仍打开的 descendant Models/Syntax Sessions → `M2.5 FAIL`
 - 同一 IDE shell 同时保留两个 `file:///workspace/...` active namespace → `M2.5 FAIL`
