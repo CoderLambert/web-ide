@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as IdeRouteImport } from './routes/ide'
+import { Route as ApiSqlLabRouteImport } from './routes/api/sql-lab'
 import { Route as ApiWorkspaceRouteImport } from './routes/api/workspace'
 
 const IndexRoute = IndexRouteImport.update({
@@ -23,6 +24,11 @@ const IdeRoute = IdeRouteImport.update({
   path: '/ide',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiSqlLabRoute = ApiSqlLabRouteImport.update({
+  id: '/api/sql-lab',
+  path: '/api/sql-lab',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiWorkspaceRoute = ApiWorkspaceRouteImport.update({
   id: '/api/workspace',
   path: '/api/workspace',
@@ -32,30 +38,34 @@ const ApiWorkspaceRoute = ApiWorkspaceRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/ide': typeof IdeRoute
+  '/api/sql-lab': typeof ApiSqlLabRoute
   '/api/workspace': typeof ApiWorkspaceRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/ide': typeof IdeRoute
+  '/api/sql-lab': typeof ApiSqlLabRoute
   '/api/workspace': typeof ApiWorkspaceRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/ide': typeof IdeRoute
+  '/api/sql-lab': typeof ApiSqlLabRoute
   '/api/workspace': typeof ApiWorkspaceRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/ide' | '/api/workspace'
+  fullPaths: '/' | '/ide' | '/api/sql-lab' | '/api/workspace'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/ide' | '/api/workspace'
-  id: '__root__' | '/' | '/ide' | '/api/workspace'
+  to: '/' | '/ide' | '/api/sql-lab' | '/api/workspace'
+  id: '__root__' | '/' | '/ide' | '/api/sql-lab' | '/api/workspace'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   IdeRoute: typeof IdeRoute
+  ApiSqlLabRoute: typeof ApiSqlLabRoute
   ApiWorkspaceRoute: typeof ApiWorkspaceRoute
 }
 
@@ -75,6 +85,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IdeRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/sql-lab': {
+      id: '/api/sql-lab'
+      path: '/api/sql-lab'
+      fullPath: '/api/sql-lab'
+      preLoaderRoute: typeof ApiSqlLabRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/workspace': {
       id: '/api/workspace'
       path: '/api/workspace'
@@ -88,6 +105,7 @@ declare module '@tanstack/react-router' {
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   IdeRoute: IdeRoute,
+  ApiSqlLabRoute: ApiSqlLabRoute,
   ApiWorkspaceRoute: ApiWorkspaceRoute,
 }
 export const routeTree = rootRouteImport

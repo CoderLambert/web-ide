@@ -243,6 +243,12 @@ export class SqliteEngine {
     }
 
     const transactionRolledBack = this.rollbackOpenTransaction();
+    if (statementIndex === 0 && results.length === 0) {
+      throw new SqliteEngineError(
+        "NO_EXECUTABLE_STATEMENT",
+        "SQL does not contain an executable statement.",
+      );
+    }
     return {
       status,
       results,
