@@ -4,8 +4,6 @@ import type { SyntaxSelectionPath, TextPosition } from "../../types";
 import type { DocumentSession } from "./document-session";
 import { treeSitterNodeToTextRange } from "./text-range";
 
-const encoder = new TextEncoder();
-
 function lineAt(text: string, row: number): string {
   let currentRow = 0;
   let lineStart = 0;
@@ -23,29 +21,10 @@ function lineAt(text: string, row: number): string {
   throw new Error(`Text position has an invalid line ${row}.`);
 }
 
-function utf16ColumnToUtf8(line: string, character: number): number {
+function validateUtf16Column(line: string, character: number): void {
   if (!Number.isInteger(character) || character < 0 || character > line.length) {
     throw new Error(`Text position has an invalid UTF-16 character ${character}.`);
   }
-
-  let codeUnits = 0;
-  let bytes = 0;
-  while (codeUnits < character) {
-    const codePoint = line.codePointAt(codeUnits);
-    if (codePoint === undefined) {
-      break;
-    }
-
-    const codeUnitLength = codePoint > 0xffff ? 2 : 1;
-    if (codeUnits + codeUnitLength > character) {
-      throw new Error(`Text position splits a Unicode code point at character ${character}.`);
-    }
-
-    bytes += encoder.encode(line.slice(codeUnits, codeUnits + codeUnitLength)).byteLength;
-    codeUnits += codeUnitLength;
-  }
-
-  return bytes;
 }
 
 export function textPositionToTreeSitterPoint(text: string, position: TextPosition): Point {
@@ -54,9 +33,10 @@ export function textPositionToTreeSitterPoint(text: string, position: TextPositi
   }
 
   const line = lineAt(text, position.line);
+  validateUtf16Column(line, position.character);
   return {
     row: position.line,
-    column: utf16ColumnToUtf8(line, position.character),
+    column: position.character,
   };
 }
 

@@ -24,10 +24,10 @@ function fakeNode(
 }
 
 describe("Tree-sitter selection mapping", () => {
-  it("converts emoji and CRLF positions from UTF-16 to UTF-8 points", () => {
+  it("retains UTF-16 columns for emoji and CRLF positions", () => {
     expect(textPositionToTreeSitterPoint("SELECT '😀', name", { line: 0, character: 13 })).toEqual({
       row: 0,
-      column: 15,
+      column: 13,
     });
     expect(textPositionToTreeSitterPoint("SELECT\r\n  name", { line: 1, character: 2 })).toEqual({
       row: 1,
