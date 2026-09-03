@@ -6,7 +6,7 @@
 S0 PASS / sealed
 M1 PASS / sealed
 M2 PASS / sealed
-M2.5 active
+M2.5 PASS / sealed
 W-01 PASS / sealed
 W-02 PASS / sealed
 W-03 PASS / sealed
@@ -15,7 +15,7 @@ W-05 PASS / sealed
 W-06 PASS / sealed
 W-07 PASS / sealed
 W-08 PASS / sealed
-Next: M2.5 Final Review
+Next: M3
 ```
 
 ## Phase S0

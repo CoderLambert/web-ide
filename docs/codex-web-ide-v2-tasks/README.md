@@ -8,7 +8,7 @@
 S0 Runtime Compatibility   PASS / sealed
 M1 Syntax Foundation       PASS / sealed
 M2 Syntax UX               PASS / sealed
-M2.5 Workspace Foundation  active
+M2.5 Workspace Foundation  PASS / sealed
 W-01                       PASS / sealed
 W-02                       PASS / sealed
 W-03                       PASS / sealed
@@ -17,10 +17,10 @@ W-05                       PASS / sealed
 W-06                       PASS / sealed
 W-07                       PASS / sealed
 W-08                       PASS / sealed
-Next                       M2.5 Final Review
+Next                       M3
 ```
 
-当前执行入口是 `04_M25_WORKSPACE_FOUNDATION.md`；M2 已 sealed，不因 M2.5 开发重新打开。W-01 至 W-08 已完成并 sealed，下一步执行 M2.5 Final Review。
+M2.5 Workspace Foundation 已完成 Final Review 并 sealed。下一阶段为 M3；本次执行到此停止，不自动开始 M3。
 
 ## 使用方式
 
