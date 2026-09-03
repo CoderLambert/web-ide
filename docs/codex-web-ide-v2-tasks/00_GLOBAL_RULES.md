@@ -205,3 +205,47 @@ Status: PASS | BLOCKED | FAIL
 ```
 
 如果 `Status != PASS`，不要开始下一任务。
+
+---
+
+## 8. Vite+ Validation Workflow
+
+项目固定使用已安装的 Vite+ `0.3.0`。Agent 不升级 Vite+，也不为标准验证流程自建 runner、scheduler、cache 或 hook manager。
+
+标准静态检查和单元测试由项目 `vite.config.ts` 中的 Validation Task 统一编排：
+
+```bash
+vp check
+vp test
+vp run validate
+```
+
+普通开发 Task 默认执行：
+
+```bash
+vp run validate
+```
+
+Agent 可以在实现阶段按需执行 `vp check --fix`。Validation Task、`vp staged` 和 commit hook 只验证，不使用 `--fix`，不自动 `git add`，不修改源码。
+
+专项验证执行任务文档指定的 VP Task，例如：
+
+```bash
+vp run verify:language-assets
+```
+
+阶段最终验收使用一个入口：
+
+```bash
+vp run verify:m2
+```
+
+Vite+ `0.3.0` 不允许 `vite.config.ts` Task 与同名 `package.json` script 共存，因此当前不添加 `verify:m2` 的同名 package alias；只有在固定版本实际支持后才能恢复 `pnpm verify:m2` 入口。
+
+Phase Gate 负责一次 install、静态检查、单元测试、兼容性 `tsc --noEmit`、build 和 production preview；同一 preview 上运行阶段回归套件。不得把 `verify:s0`、`verify:m1` 互相嵌套来重复 build/preview。S0/M1 sealed verifier 保持不变，新阶段使用公共 preview lifecycle helper。
+
+Main Agent 负责选择并执行确定的 VP Validation Task、读取 exit code/summary、处理失败和触发 Review；不手工重新组合 format/lint/typecheck/unit/build/preview 序列。需要查看最近一次任务详情时使用：
+
+```bash
+vp run --last-details
+```

@@ -3,11 +3,34 @@ import { tanstackStart } from "@tanstack/react-start/plugin/vite";
 import viteReact from "@vitejs/plugin-react";
 
 export default defineConfig({
+  run: {
+    tasks: {
+      validate: {
+        command: ["vp check", "vp test run tests/unit"],
+        cache: false,
+      },
+      "verify:language-assets": {
+        command: ["vp run validate", "node scripts/verify-language-assets.mjs"],
+        cache: false,
+      },
+      "verify:m2": {
+        command: [
+          "pnpm install --frozen-lockfile",
+          "vp run validate",
+          "tsc --noEmit",
+          "node scripts/verify-language-assets.mjs",
+          "vp build",
+          "node scripts/verify-production-preview.mjs tests/s0 tests/m1 tests/m2",
+        ],
+        cache: false,
+      },
+    },
+  },
   test: {
     include: ["tests/unit/**/*.test.ts"],
   },
   staged: {
-    "*": "vp check --fix",
+    "*": "vp check",
   },
   lint: {
     jsPlugins: [{ name: "vite-plus", specifier: "vite-plus/oxlint-plugin" }],

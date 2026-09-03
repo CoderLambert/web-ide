@@ -187,3 +187,45 @@ review diff
 ```
 
 禁止多个 Agent 自行选择不同依赖版本；S0 冻结的版本只能消费，不能顺手升级。
+
+---
+
+# 6. Vite+ Validation Task Workflow
+
+Validation 流程由 Vite+ `0.3.0` 和 `vite.config.ts` 中的项目 Task 统一维护。Agent 不临时生成标准验证命令序列。
+
+Implementation Agent 完成实现后：
+
+```text
+按需 vp check --fix
+        ↓
+vp run validate
+或任务文档指定的专项 VP Task
+        ↓
+FAIL → Implementation/Test Agent 修复 → 重跑同一个 VP Task
+        ↓
+PASS → Review Agent → 代码有修改则重跑同一个 VP Task
+        ↓
+vp staged → commit → push
+```
+
+职责约定：
+
+- Implementation Agent 负责代码、局部开发测试和必要的 fix，不重复运行完整 Phase Gate。
+- Main Agent 负责调度一个确定的 VP Validation Task，读取 exit code/执行 summary、Review Gate、commit/push 和解锁后续 Task。不自行拼接 format/lint/typecheck/unit/build/preview。
+- Test Agent 只用于编写测试、复杂失败诊断或独立 Phase Final 验证，不创建只运行 `vp run validate` 的 Agent。
+- Review Agent 继续检查 P0/P1、架构边界、生命周期、资源泄漏、stale correctness 和 scope；程序化 Gate 不能替代 Review。
+
+默认入口是：
+
+```bash
+vp run validate
+```
+
+有额外业务验证时只执行指定专项 Task，例如 `vp run verify:language-assets`。阶段最终验收只使用稳定 VP Task 入口：
+
+```bash
+vp run verify:m2
+```
+
+Validation 和 staged hook 都只验证，不使用 `--fix`，不自动修改源码。Phase Gate 应一次 build、一次 preview，并在该 preview 上运行 S0/M1 回归及当前阶段 E2E；不通过 `verify:s0 → verify:m1 → verify:m2` 这种嵌套关系重复执行 build/preview。失败时优先读取 VP Task exit code 和 execution summary，必要时再分析失败 Task 的输出。
