@@ -1,13 +1,13 @@
 import { defineConfig, lazyPlugins, type Connect, type Plugin } from "vite-plus";
 import { tanstackStart } from "@tanstack/react-start/plugin/vite";
 import viteReact from "@vitejs/plugin-react";
-import { randomUUID } from "node:crypto";
 
 const CHROME_DEVTOOLS_WORKSPACE_PATH = "/.well-known/appspecific/com.chrome.devtools.json";
+const CHROME_DEVTOOLS_WORKSPACE_UUID = "f1a2b3c4-5678-4abc-9def-0123456789ab";
 const responseBody = JSON.stringify({
   workspace: {
     root: process.cwd(),
-    uuid: randomUUID(),
+    uuid: CHROME_DEVTOOLS_WORKSPACE_UUID,
   },
 });
 
