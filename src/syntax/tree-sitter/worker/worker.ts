@@ -36,6 +36,9 @@ function isWorkerRequest(message: ProtocolMessage): message is WorkerRequest {
     case "ReplaceDocument":
     case "CloseDocument":
     case "InspectDocument":
+    case "GetHighlights":
+    case "GetFoldingRanges":
+    case "GetSelectionRanges":
       return true;
     default:
       return false;
@@ -67,6 +70,9 @@ function isWorkerResponse(message: ProtocolMessage): message is WorkerResponse {
     case "WorkerReady":
     case "ParseResult":
     case "InspectResult":
+    case "HighlightsResult":
+    case "FoldingRangesResult":
+    case "SelectionRangesResult":
     case "WorkerError":
       return true;
     default:

@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vite-plus/test";
 
 import {
+  type HighlightsResult,
   PROTOCOL_VERSION,
   type InspectResult,
   type ParseResult,
@@ -94,6 +95,17 @@ const inspection = (workerGeneration: number, documentVersion: number): InspectR
   truncated: true,
 });
 
+const highlights = (workerGeneration: number, documentVersion: number): HighlightsResult => ({
+  type: "HighlightsResult",
+  protocolVersion: PROTOCOL_VERSION,
+  workerGeneration,
+  requestId: 1,
+  sessionId: "session-1",
+  documentUri: "opaque-document-id",
+  documentVersion,
+  tokens: [],
+});
+
 describe("TreeSitterClient", () => {
   it("allocates request ids and sends the current worker generation", async () => {
     const worker = new FakeWorker();
@@ -162,6 +174,27 @@ describe("TreeSitterClient", () => {
 
     await expect(pending).resolves.toMatchObject({
       type: "InspectResult",
+      documentVersion: 8,
+    });
+    expect(client.pendingCount).toBe(0);
+  });
+
+  it("resolves capability results only for the expected document version", async () => {
+    const worker = new FakeWorker();
+    const client = new TreeSitterClient(worker, 4);
+    const pending = client.request({
+      type: "GetHighlights",
+      sessionId: "session-1",
+      documentUri: "opaque-document-id",
+      expectedVersion: 8,
+    });
+
+    worker.emitMessage({ ...highlights(4, 7), requestId: 1 });
+    expect(client.pendingCount).toBe(1);
+    worker.emitMessage({ ...highlights(4, 8), requestId: 1 });
+
+    await expect(pending).resolves.toMatchObject({
+      type: "HighlightsResult",
       documentVersion: 8,
     });
     expect(client.pendingCount).toBe(0);

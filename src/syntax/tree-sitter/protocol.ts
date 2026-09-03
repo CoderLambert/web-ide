@@ -1,3 +1,13 @@
+import {
+  SYNTAX_TOKEN_TYPES,
+  type SyntaxFoldingRange,
+  type SyntaxSelectionPath,
+  type SyntaxToken,
+  type SyntaxTokenType,
+  type TextPosition,
+  type TextRange,
+} from "../types";
+
 export const PROTOCOL_VERSION = 1 as const;
 
 export const PROTOCOL_MESSAGE_TYPES = [
@@ -6,9 +16,15 @@ export const PROTOCOL_MESSAGE_TYPES = [
   "ReplaceDocument",
   "CloseDocument",
   "InspectDocument",
+  "GetHighlights",
+  "GetFoldingRanges",
+  "GetSelectionRanges",
   "WorkerReady",
   "ParseResult",
   "InspectResult",
+  "HighlightsResult",
+  "FoldingRangesResult",
+  "SelectionRangesResult",
   "WorkerError",
 ] as const;
 
@@ -29,16 +45,7 @@ export const WORKER_ERROR_CODES = [
 
 export type WorkerErrorCode = (typeof WORKER_ERROR_CODES)[number];
 
-/** Shared project DTO; line and character are both 0-based UTF-16 offsets. */
-export interface TextPosition {
-  line: number;
-  character: number;
-}
-
-export interface TextRange {
-  start: TextPosition;
-  end: TextPosition;
-}
+export type { TextPosition, TextRange } from "../types";
 
 /** Text changes use UTF-16 offsets and never carry editor-specific range objects. */
 export interface TextChange {
@@ -98,6 +105,22 @@ export interface InspectDocument extends RequestMeta, DocumentMeta {
   maxNodes: number;
 }
 
+export interface GetHighlights extends RequestMeta, DocumentMeta {
+  type: "GetHighlights";
+  expectedVersion: number;
+}
+
+export interface GetFoldingRanges extends RequestMeta, DocumentMeta {
+  type: "GetFoldingRanges";
+  expectedVersion: number;
+}
+
+export interface GetSelectionRanges extends RequestMeta, DocumentMeta {
+  type: "GetSelectionRanges";
+  expectedVersion: number;
+  positions: TextPosition[];
+}
+
 /** WorkerSupervisor owns the generation; readiness is not tied to a document request. */
 export interface WorkerReady {
   type: "WorkerReady";
@@ -128,6 +151,21 @@ export interface InspectResult extends RequestMeta, VersionedDocumentMeta {
   truncated: boolean;
 }
 
+export interface HighlightsResult extends RequestMeta, VersionedDocumentMeta {
+  type: "HighlightsResult";
+  tokens: SyntaxToken[];
+}
+
+export interface FoldingRangesResult extends RequestMeta, VersionedDocumentMeta {
+  type: "FoldingRangesResult";
+  ranges: SyntaxFoldingRange[];
+}
+
+export interface SelectionRangesResult extends RequestMeta, VersionedDocumentMeta {
+  type: "SelectionRangesResult";
+  selections: SyntaxSelectionPath[];
+}
+
 export interface WorkerError {
   type: "WorkerError";
   protocolVersion: typeof PROTOCOL_VERSION;
@@ -148,9 +186,19 @@ export type WorkerRequest =
   | ApplyChanges
   | ReplaceDocument
   | CloseDocument
-  | InspectDocument;
+  | InspectDocument
+  | GetHighlights
+  | GetFoldingRanges
+  | GetSelectionRanges;
 
-export type WorkerResponse = WorkerReady | ParseResult | InspectResult | WorkerError;
+export type WorkerResponse =
+  | WorkerReady
+  | ParseResult
+  | InspectResult
+  | HighlightsResult
+  | FoldingRangesResult
+  | SelectionRangesResult
+  | WorkerError;
 
 export type ProtocolMessage = WorkerRequest | WorkerResponse;
 
@@ -307,6 +355,44 @@ const decodeTextRange = (input: unknown, path: string): TextRange => {
   };
 };
 
+const readSyntaxTokenType = (input: unknown, path: string): SyntaxTokenType => {
+  if (typeof input !== "string" || !SYNTAX_TOKEN_TYPES.includes(input as SyntaxTokenType)) {
+    return invalid("Unknown syntax token type.", path);
+  }
+
+  return input as SyntaxTokenType;
+};
+
+const decodeSyntaxToken = (input: unknown, path: string): SyntaxToken => {
+  const record = expectRecord(input, path);
+  expectKeys(record, ["range", "type"], path);
+
+  return {
+    range: decodeTextRange(required(record, "range", path), `${path}.range`),
+    type: readSyntaxTokenType(required(record, "type", path), `${path}.type`),
+  };
+};
+
+const decodeSyntaxFoldingRange = (input: unknown, path: string): SyntaxFoldingRange => {
+  const record = expectRecord(input, path);
+  expectKeys(record, ["range"], path);
+
+  return {
+    range: decodeTextRange(required(record, "range", path), `${path}.range`),
+  };
+};
+
+const decodeSyntaxSelectionPath = (input: unknown, path: string): SyntaxSelectionPath => {
+  const record = expectRecord(input, path);
+  expectKeys(record, ["ranges"], path);
+
+  return {
+    ranges: readArrayField(record, "ranges", path).map((range, index) =>
+      decodeTextRange(range, `${path}.ranges[${index}]`),
+    ),
+  };
+};
+
 const decodeTextChange = (input: unknown, path: string): TextChange => {
   const record = expectRecord(input, path);
   expectKeys(record, ["rangeOffset", "rangeLength", "text"], path);
@@ -443,6 +529,79 @@ const decodeInspectDocument = (record: MessageRecord, path: string): InspectDocu
     expectedVersion: readNonNegativeIntegerField(record, "expectedVersion", path),
     maxDepth: readNonNegativeIntegerField(record, "maxDepth", path),
     maxNodes: readNonNegativeIntegerField(record, "maxNodes", path),
+  };
+};
+
+const decodeGetHighlights = (record: MessageRecord, path: string): GetHighlights => {
+  expectKeys(
+    record,
+    [
+      "type",
+      "protocolVersion",
+      "workerGeneration",
+      "requestId",
+      "sessionId",
+      "documentUri",
+      "expectedVersion",
+    ],
+    path,
+  );
+
+  return {
+    type: "GetHighlights",
+    ...readRequestMeta(record, path),
+    ...readDocumentMeta(record, path),
+    expectedVersion: readNonNegativeIntegerField(record, "expectedVersion", path),
+  };
+};
+
+const decodeGetFoldingRanges = (record: MessageRecord, path: string): GetFoldingRanges => {
+  expectKeys(
+    record,
+    [
+      "type",
+      "protocolVersion",
+      "workerGeneration",
+      "requestId",
+      "sessionId",
+      "documentUri",
+      "expectedVersion",
+    ],
+    path,
+  );
+
+  return {
+    type: "GetFoldingRanges",
+    ...readRequestMeta(record, path),
+    ...readDocumentMeta(record, path),
+    expectedVersion: readNonNegativeIntegerField(record, "expectedVersion", path),
+  };
+};
+
+const decodeGetSelectionRanges = (record: MessageRecord, path: string): GetSelectionRanges => {
+  expectKeys(
+    record,
+    [
+      "type",
+      "protocolVersion",
+      "workerGeneration",
+      "requestId",
+      "sessionId",
+      "documentUri",
+      "expectedVersion",
+      "positions",
+    ],
+    path,
+  );
+
+  return {
+    type: "GetSelectionRanges",
+    ...readRequestMeta(record, path),
+    ...readDocumentMeta(record, path),
+    expectedVersion: readNonNegativeIntegerField(record, "expectedVersion", path),
+    positions: readArrayField(record, "positions", path).map((position, index) =>
+      decodeTextPosition(position, `${path}.positions[${index}]`),
+    ),
   };
 };
 
@@ -594,6 +753,87 @@ const decodeInspectResult = (record: MessageRecord, path: string): InspectResult
   };
 };
 
+const decodeHighlightsResult = (record: MessageRecord, path: string): HighlightsResult => {
+  expectKeys(
+    record,
+    [
+      "type",
+      "protocolVersion",
+      "workerGeneration",
+      "requestId",
+      "sessionId",
+      "documentUri",
+      "documentVersion",
+      "tokens",
+    ],
+    path,
+  );
+
+  return {
+    type: "HighlightsResult",
+    ...readRequestMeta(record, path),
+    ...readVersionedDocumentMeta(record, path),
+    tokens: readArrayField(record, "tokens", path).map((token, index) =>
+      decodeSyntaxToken(token, `${path}.tokens[${index}]`),
+    ),
+  };
+};
+
+const decodeFoldingRangesResult = (record: MessageRecord, path: string): FoldingRangesResult => {
+  expectKeys(
+    record,
+    [
+      "type",
+      "protocolVersion",
+      "workerGeneration",
+      "requestId",
+      "sessionId",
+      "documentUri",
+      "documentVersion",
+      "ranges",
+    ],
+    path,
+  );
+
+  return {
+    type: "FoldingRangesResult",
+    ...readRequestMeta(record, path),
+    ...readVersionedDocumentMeta(record, path),
+    ranges: readArrayField(record, "ranges", path).map((range, index) =>
+      decodeSyntaxFoldingRange(range, `${path}.ranges[${index}]`),
+    ),
+  };
+};
+
+const decodeSelectionRangesResult = (
+  record: MessageRecord,
+  path: string,
+): SelectionRangesResult => {
+  expectKeys(
+    record,
+    [
+      "type",
+      "protocolVersion",
+      "workerGeneration",
+      "requestId",
+      "sessionId",
+      "documentUri",
+      "documentVersion",
+      "selections",
+    ],
+    path,
+  );
+
+  return {
+    type: "SelectionRangesResult",
+    ...readRequestMeta(record, path),
+    ...readVersionedDocumentMeta(record, path),
+    selections: readArrayField(record, "selections", path).map((selection, index) =>
+      decodeSyntaxSelectionPath(selection, `${path}.selections[${index}]`),
+    ),
+  };
+};
+
 const readWorkerErrorCode = (input: unknown, path: string): WorkerErrorCode => {
   if (typeof input !== "string" || !WORKER_ERROR_CODES.includes(input as WorkerErrorCode)) {
     return invalid("Unknown Worker error code.", path);
@@ -683,12 +923,24 @@ export function decodeWorkerMessage(input: unknown): ProtocolMessage {
       return decodeCloseDocument(record, "$message");
     case "InspectDocument":
       return decodeInspectDocument(record, "$message");
+    case "GetHighlights":
+      return decodeGetHighlights(record, "$message");
+    case "GetFoldingRanges":
+      return decodeGetFoldingRanges(record, "$message");
+    case "GetSelectionRanges":
+      return decodeGetSelectionRanges(record, "$message");
     case "WorkerReady":
       return decodeWorkerReady(record, "$message");
     case "ParseResult":
       return decodeParseResult(record, "$message");
     case "InspectResult":
       return decodeInspectResult(record, "$message");
+    case "HighlightsResult":
+      return decodeHighlightsResult(record, "$message");
+    case "FoldingRangesResult":
+      return decodeFoldingRangesResult(record, "$message");
+    case "SelectionRangesResult":
+      return decodeSelectionRangesResult(record, "$message");
     case "WorkerError":
       return decodeWorkerError(record, "$message");
     default:

@@ -92,7 +92,10 @@ function parseResult(request: TreeSitterClientRequest): ParseResult {
   const documentVersion =
     request.type === "ApplyChanges"
       ? request.nextVersion
-      : request.type === "InspectDocument"
+      : request.type === "InspectDocument" ||
+          request.type === "GetHighlights" ||
+          request.type === "GetFoldingRanges" ||
+          request.type === "GetSelectionRanges"
         ? request.expectedVersion
         : request.documentVersion;
   return {

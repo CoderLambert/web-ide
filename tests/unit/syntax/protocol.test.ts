@@ -50,6 +50,22 @@ const fixtures: ProtocolMessage[] = [
     maxNodes: 2000,
   },
   {
+    type: "GetHighlights",
+    ...requestMeta,
+    expectedVersion: 12,
+  },
+  {
+    type: "GetFoldingRanges",
+    ...requestMeta,
+    expectedVersion: 12,
+  },
+  {
+    type: "GetSelectionRanges",
+    ...requestMeta,
+    expectedVersion: 12,
+    positions: [{ line: 0, character: 1 }],
+  },
+  {
     type: "WorkerReady",
     protocolVersion: PROTOCOL_VERSION,
     workerGeneration: 3,
@@ -85,6 +101,48 @@ const fixtures: ProtocolMessage[] = [
     truncated: false,
   },
   {
+    type: "HighlightsResult",
+    ...requestMeta,
+    documentVersion: 12,
+    tokens: [
+      {
+        range: {
+          start: { line: 0, character: 0 },
+          end: { line: 0, character: 6 },
+        },
+        type: "keyword",
+      },
+    ],
+  },
+  {
+    type: "FoldingRangesResult",
+    ...requestMeta,
+    documentVersion: 12,
+    ranges: [
+      {
+        range: {
+          start: { line: 0, character: 0 },
+          end: { line: 2, character: 1 },
+        },
+      },
+    ],
+  },
+  {
+    type: "SelectionRangesResult",
+    ...requestMeta,
+    documentVersion: 12,
+    selections: [
+      {
+        ranges: [
+          {
+            start: { line: 0, character: 7 },
+            end: { line: 0, character: 9 },
+          },
+        ],
+      },
+    ],
+  },
+  {
     type: "WorkerError",
     protocolVersion: PROTOCOL_VERSION,
     workerGeneration: 3,
@@ -113,9 +171,25 @@ describe("Tree-sitter Worker protocol", () => {
       { ...fixtures[2], documentUri: "" },
       { ...fixtures[4], maxNodes: "2000" },
       { ...fixtures[5], workerGeneration: -1 },
-      { ...fixtures[6], changedRanges: [{ start: { line: 0, character: 0 } }] },
-      { ...fixtures[7], root: { type: "source_file" } },
-      { ...fixtures[8], code: "NOT_A_REAL_ERROR" },
+      { ...fixtures[9], changedRanges: [{ start: { line: 0, character: 0 } }] },
+      { ...fixtures[10], root: { type: "source_file" } },
+      { ...fixtures[11], tokens: [{ range: {}, type: "keyword" }] },
+      { ...fixtures[12], ranges: [{ range: {}, extra: true }] },
+      { ...fixtures[13], selections: [{ ranges: [{}, {}] }] },
+      { ...fixtures[14], code: "NOT_A_REAL_ERROR" },
+      { ...fixtures[7], positions: [{ line: 0, character: -1 }] },
+      {
+        ...fixtures[11],
+        tokens: [
+          {
+            range: {
+              start: { line: 0, character: 0 },
+              end: { line: 0, character: 6 },
+            },
+            type: "raw.capture",
+          },
+        ],
+      },
       { ...fixtures[0], unexpected: true },
       { type: "NotAProtocolMessage", protocolVersion: PROTOCOL_VERSION },
     ];
@@ -135,7 +209,7 @@ describe("Tree-sitter Worker protocol", () => {
   });
 
   it("rejects malformed or cyclic Inspector result DTOs", () => {
-    expect(() => decodeWorkerMessage({ ...fixtures[7], nodeCount: 2 })).toThrow(
+    expect(() => decodeWorkerMessage({ ...fixtures[10], nodeCount: 2 })).toThrow(
       ProtocolDecodeError,
     );
 
@@ -150,7 +224,7 @@ describe("Tree-sitter Worker protocol", () => {
       truncated: false,
     };
     cyclicNode.children = [cyclicNode];
-    expect(() => decodeWorkerMessage({ ...fixtures[7], root: cyclicNode, nodeCount: 2 })).toThrow(
+    expect(() => decodeWorkerMessage({ ...fixtures[10], root: cyclicNode, nodeCount: 2 })).toThrow(
       ProtocolDecodeError,
     );
   });
@@ -171,5 +245,14 @@ describe("Tree-sitter Worker protocol", () => {
 
     expect(decoded).toMatchObject({ type: "InspectDocument", expectedVersion: 12 });
     expect(decoded).not.toHaveProperty("documentVersion");
+  });
+
+  it("keeps capability request expected versions separate from result versions", () => {
+    const request = decodeWorkerMessage(fixtures[5]);
+    const result = decodeWorkerMessage(fixtures[11]);
+
+    expect(request).toMatchObject({ type: "GetHighlights", expectedVersion: 12 });
+    expect(request).not.toHaveProperty("documentVersion");
+    expect(result).toMatchObject({ type: "HighlightsResult", documentVersion: 12 });
   });
 });
