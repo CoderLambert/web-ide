@@ -222,9 +222,21 @@ vp staged → commit → push
 vp run validate
 ```
 
-有额外业务验证时，只能执行已经实现并接入 `vite.config.ts` 的专项 Task。当前 M2 assets verifier 和 `tests/m2` 尚未实现，因此 `verify:language-assets`、`verify:m2` 都是未来约定，当前不可调用。
+有额外业务验证时，只能执行已经实现并接入 `vite.config.ts` 的专项 Task。当前 M2 assets verifier 与 `tests/m2` 已实现，正式专项入口为：
 
-Phase Final Gate 的目标是：
+```text
+verify:language-assets  → M2 language assets verifier
+verify:m2               → M2 Phase Final Gate
+```
+
+M2 Phase Final 固定入口为：
+
+```bash
+pnpm install --frozen-lockfile
+vp run verify:m2
+```
+
+Phase Final Gate 的目标保持：
 
 ```text
 install once
@@ -237,4 +249,4 @@ phase regressions once
 cleanup once
 ```
 
-M2 Phase Gate 尚未启用。待 M2 assets verifier 与 `tests/m2` 真正实现后，再注册正式入口；不通过 `verify:s0 → verify:m1 → verify:m2` 这种嵌套关系重复执行 build/preview。失败时优先读取 VP Task exit code 和 execution summary，必要时再分析失败 Task 的输出。
+M2 Final Gate 直接在同一 production preview 上运行 S0/M1/M2 regression suites，不通过 `verify:s0 → verify:m1 → verify:m2` 这种嵌套关系重复 build/preview。S0/M1 sealed verifier 保持不变。失败时优先读取 VP Task exit code 和 execution summary，必要时再分析失败 Task 的输出。
