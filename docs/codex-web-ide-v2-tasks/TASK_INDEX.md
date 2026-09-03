@@ -13,7 +13,8 @@ W-03 PASS / sealed
 W-04 PASS / sealed
 W-05 PASS / sealed
 W-06 PASS / sealed
-Next: W-07 Backend Visibility Contract
+W-07 PASS / sealed
+Next: W-08 Workspace Integration Gate
 ```
 
 ## Phase S0
