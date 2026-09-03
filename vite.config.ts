@@ -19,6 +19,11 @@ export default defineConfig({
         dependsOn: ["verify:language-assets"],
         cache: false,
       },
+      "verify:m25": {
+        command: "node scripts/verify-m25.mjs",
+        dependsOn: ["validate"],
+        cache: false,
+      },
     },
   },
   test: {

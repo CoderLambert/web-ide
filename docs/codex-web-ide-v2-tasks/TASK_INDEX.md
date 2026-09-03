@@ -14,7 +14,8 @@ W-04 PASS / sealed
 W-05 PASS / sealed
 W-06 PASS / sealed
 W-07 PASS / sealed
-Next: W-08 Workspace Integration Gate
+W-08 PASS / sealed
+Next: M2.5 Final Review
 ```
 
 ## Phase S0

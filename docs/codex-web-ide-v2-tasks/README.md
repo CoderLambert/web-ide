@@ -16,10 +16,11 @@ W-04                       PASS / sealed
 W-05                       PASS / sealed
 W-06                       PASS / sealed
 W-07                       PASS / sealed
-Next                       W-08 Workspace Integration Gate
+W-08                       PASS / sealed
+Next                       M2.5 Final Review
 ```
 
-当前执行入口是 `04_M25_WORKSPACE_FOUNDATION.md`；M2 已 sealed，不因 M2.5 开发重新打开。W-01 至 W-07 已完成并 sealed，后续从 W-08 开始。
+当前执行入口是 `04_M25_WORKSPACE_FOUNDATION.md`；M2 已 sealed，不因 M2.5 开发重新打开。W-01 至 W-08 已完成并 sealed，下一步执行 M2.5 Final Review。
 
 ## 使用方式
 
