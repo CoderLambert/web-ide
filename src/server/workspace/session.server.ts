@@ -25,6 +25,14 @@ export function handleWorkspaceSessionRequestWithConfiguration(
 
   const requestUrl = new URL(request.url);
   if (
+    isConfigured(configuration.workspaceId) &&
+    isConfigured(configuration.token) &&
+    readCookie(request.headers.get("cookie"), "web_ide_workspace_token") === configuration.token
+  ) {
+    return noContentResponse();
+  }
+
+  if (
     configuration.localSessionBootstrap !== "1" ||
     !isConfigured(configuration.workspaceId) ||
     !isConfigured(configuration.token) ||
@@ -43,12 +51,17 @@ export function handleWorkspaceSessionRequestWithConfiguration(
     cookie.push("Secure");
   }
 
+  return noContentResponse(cookie.join("; "));
+}
+
+function noContentResponse(cookie?: string): Response {
+  const headers = new Headers({ "cache-control": "no-store" });
+  if (cookie !== undefined) {
+    headers.set("set-cookie", cookie);
+  }
   return new Response(null, {
     status: 204,
-    headers: {
-      "cache-control": "no-store",
-      "set-cookie": cookie.join("; "),
-    },
+    headers,
   });
 }
 
@@ -66,4 +79,17 @@ function isConfigured(value: string | undefined): value is string {
 function isLocalHost(hostname: string): boolean {
   const normalized = hostname.toLowerCase().replace(/^\[|\]$/g, "");
   return normalized === "localhost" || normalized === "127.0.0.1" || normalized === "::1";
+}
+
+function readCookie(header: string | null, name: string): string | undefined {
+  if (header === null) {
+    return undefined;
+  }
+  for (const cookie of header.split(";")) {
+    const separator = cookie.indexOf("=");
+    if (separator !== -1 && cookie.slice(0, separator).trim() === name) {
+      return cookie.slice(separator + 1).trim();
+    }
+  }
+  return undefined;
 }

@@ -34,6 +34,20 @@ describe("Workspace local development session bootstrap", () => {
     expect(response.headers.get("set-cookie")).toContain("Secure");
   });
 
+  it("reuses a valid existing session without requiring local bootstrap", async () => {
+    const response = handleWorkspaceSessionRequestWithConfiguration(
+      new Request("https://example.test/api/workspace/session", {
+        method: "POST",
+        headers: { cookie: "web_ide_workspace_token=server-secret" },
+      }),
+      { ...enabledConfiguration, localSessionBootstrap: "0" },
+    );
+
+    expect(response.status).toBe(204);
+    expect(response.headers.get("set-cookie")).toBeNull();
+    expect(await response.text()).toBe("");
+  });
+
   it.each([
     {
       name: "bootstrap flag is disabled",
@@ -66,6 +80,19 @@ describe("Workspace local development session bootstrap", () => {
     expect(body).toContain('"FORBIDDEN"');
     expect(body).not.toContain("server-secret");
     expect(response.headers.get("set-cookie")).toBeNull();
+  });
+
+  it("rejects an absent or incorrect session when local bootstrap is disabled", async () => {
+    for (const cookie of [undefined, "web_ide_workspace_token=wrong-secret"]) {
+      const headers = cookie === undefined ? undefined : { cookie };
+      const response = handleWorkspaceSessionRequestWithConfiguration(
+        new Request("http://localhost/api/workspace/session", { method: "POST", headers }),
+        { ...enabledConfiguration, localSessionBootstrap: "0" },
+      );
+
+      expect(response.status).toBe(403);
+      expect(response.headers.get("set-cookie")).toBeNull();
+    }
   });
 
   it("accepts the IPv6 loopback host", () => {
