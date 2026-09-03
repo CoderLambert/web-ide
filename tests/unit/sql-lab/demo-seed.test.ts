@@ -22,6 +22,5 @@ describe("SQL Lab demo seed", () => {
 
   it("does not rely on an external database or executable", () => {
     expect(DEMO_SEED_SQL).not.toMatch(/ATTACH|load_extension|VACUUM INTO/i);
-    expect(DEMO_SEED_SQL).toContain("PRAGMA foreign_keys = ON");
   });
 });

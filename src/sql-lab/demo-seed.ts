@@ -1,8 +1,6 @@
 export const DEMO_SEED_VERSION = "sql-lab-demo-v1";
 
 export const DEMO_SEED_SQL = `
-PRAGMA foreign_keys = ON;
-
 CREATE TABLE customers (
   id INTEGER PRIMARY KEY,
   email TEXT NOT NULL UNIQUE,
