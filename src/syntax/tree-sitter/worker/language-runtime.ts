@@ -1,11 +1,14 @@
-import { Language, Parser } from "web-tree-sitter";
+import { Language, Parser, Query } from "web-tree-sitter";
 
 import type { LanguageDefinition } from "../../../language/definition";
+import type { QueryAssetKind } from "../../../language/query-assets";
+import { QueryManager, type QueryManagerDependencies } from "./query-manager";
 
 export interface LanguageRuntimeDependencies {
   fetch: typeof globalThis.fetch;
   loadLanguage: (bytes: Uint8Array) => Promise<Language>;
   createParser: () => Parser;
+  createQuery: QueryManagerDependencies["createQuery"];
 }
 
 export type LanguageRuntimeDependencyOverrides = Partial<LanguageRuntimeDependencies>;
@@ -15,6 +18,7 @@ function defaultDependencies(): LanguageRuntimeDependencies {
     fetch: globalThis.fetch.bind(globalThis),
     loadLanguage: (bytes) => Language.load(bytes),
     createParser: () => new Parser(),
+    createQuery: (language, source) => new Query(language, source),
   };
 }
 
@@ -30,6 +34,7 @@ export class LanguageRuntime {
   private parser: Parser | undefined;
   private languagePromise: Promise<Language> | undefined;
   private parserPromise: Promise<Parser> | undefined;
+  private readonly queryManager: QueryManager;
   private disposed = false;
 
   constructor(
@@ -38,6 +43,14 @@ export class LanguageRuntime {
   ) {
     this.definition = definition;
     this.dependencies = { ...defaultDependencies(), ...dependencies };
+    this.queryManager = new QueryManager({
+      definition,
+      loadLanguage: () => this.load(),
+      dependencies: {
+        fetch: this.dependencies.fetch,
+        createQuery: this.dependencies.createQuery,
+      },
+    });
   }
 
   load(): Promise<Language> {
@@ -110,6 +123,11 @@ export class LanguageRuntime {
     return parserPromise;
   }
 
+  getQuery(kind: QueryAssetKind): Promise<Query> {
+    this.assertUsable();
+    return this.queryManager.getQuery(kind);
+  }
+
   dispose(): void {
     if (this.disposed) {
       return;
@@ -119,6 +137,7 @@ export class LanguageRuntime {
     this.parserPromise = undefined;
     this.languagePromise = undefined;
 
+    this.queryManager.dispose();
     this.parser?.delete();
     this.parser = undefined;
     this.language = undefined;
