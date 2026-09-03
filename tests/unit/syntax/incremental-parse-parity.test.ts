@@ -1,18 +1,28 @@
 import { readFile } from "node:fs/promises";
 
 import { describe, expect, it } from "vite-plus/test";
-import { Language, Parser } from "web-tree-sitter";
+import { Language, Parser, Query } from "web-tree-sitter";
 
 import { sqlLanguageDefinition } from "../../../src/languages/sql/definition";
-import type { ApplyChanges } from "../../../src/syntax/tree-sitter/protocol";
+import type { ApplyChanges, InspectNode } from "../../../src/syntax/tree-sitter/protocol";
 import { DocumentManager } from "../../../src/syntax/tree-sitter/worker/document-manager";
+import { collectFoldingRanges } from "../../../src/syntax/tree-sitter/worker/folding";
+import { collectHighlightTokens } from "../../../src/syntax/tree-sitter/worker/highlight";
+import { AstInspector } from "../../../src/syntax/tree-sitter/worker/inspector";
+import { collectSelectionPath } from "../../../src/syntax/tree-sitter/worker/selection";
 import { WorkerRuntime } from "../../../src/syntax/tree-sitter/worker/runtime";
+import type { TextRange } from "../../../src/syntax/types";
 
 const grammarUrl = new URL("../../../public/languages/sql/tree-sitter-sql.wasm", import.meta.url);
 const treeSitterWasmUrl = new URL(
   "../../../node_modules/web-tree-sitter/tree-sitter.wasm",
   import.meta.url,
 );
+const highlightsQueryUrl = new URL(
+  "../../../public/languages/sql/queries/highlights.scm",
+  import.meta.url,
+);
+const foldsQueryUrl = new URL("../../../public/languages/sql/queries/folds.scm", import.meta.url);
 
 let parserInitPromise: Promise<void> | undefined;
 
@@ -35,6 +45,23 @@ function createManager(): { manager: DocumentManager; runtime: WorkerRuntime } {
   });
   runtime.registerLanguage(sqlLanguageDefinition);
   return { manager: new DocumentManager(runtime), runtime };
+}
+
+function assertValidTextRange(text: string, range: TextRange): void {
+  const lines = text.split("\n").map((line) => (line.endsWith("\r") ? line.slice(0, -1) : line));
+  for (const position of [range.start, range.end]) {
+    expect(position.line).toBeGreaterThanOrEqual(0);
+    expect(position.line).toBeLessThan(lines.length);
+    expect(position.character).toBeGreaterThanOrEqual(0);
+    expect(position.character).toBeLessThanOrEqual(lines[position.line]?.length ?? 0);
+  }
+}
+
+function assertValidInspectRanges(text: string, node: InspectNode): void {
+  assertValidTextRange(text, node.range);
+  for (const child of node.children) {
+    assertValidInspectRanges(text, child);
+  }
 }
 
 interface ParityCase {
@@ -184,4 +211,69 @@ describe("real SQL incremental parse parity", () => {
       }
     },
   );
+
+  it("maps actual CRLF SQL node ranges through highlight, inspector, and selection adapters", async () => {
+    const { manager, runtime } = createManager();
+    const source = "SELECT 1; -- comment\r\nSELECT 2;";
+    let highlightsQuery: Query | undefined;
+    let foldsQuery: Query | undefined;
+
+    try {
+      const session = await manager.openDocument({
+        documentUri: "file:///workspace/crlf-range.sql",
+        sessionId: "session-crlf-range",
+        documentVersion: 1,
+        languageId: "sql",
+        text: source,
+      });
+      const language = await (await runtime.loadLanguage("sql")).load();
+      highlightsQuery = new Query(language, await readFile(highlightsQueryUrl, "utf8"));
+      foldsQuery = new Query(language, await readFile(foldsQueryUrl, "utf8"));
+
+      const highlights = collectHighlightTokens(session, highlightsQuery);
+      const comment = highlights.find((token) => token.type === "comment");
+      expect(comment).toEqual({
+        type: "comment",
+        range: {
+          start: { line: 0, character: 10 },
+          end: { line: 0, character: 20 },
+        },
+      });
+      for (const token of highlights) {
+        assertValidTextRange(source, token.range);
+      }
+
+      const inspectResult = new AstInspector().inspect(session, {
+        expectedVersion: 1,
+        maxDepth: 20,
+        maxNodes: 200,
+      });
+      expect(inspectResult.root?.range).toEqual({
+        start: { line: 0, character: 0 },
+        end: { line: 1, character: 9 },
+      });
+      if (inspectResult.root !== null) {
+        assertValidInspectRanges(source, inspectResult.root);
+      }
+
+      const foldingRanges = collectFoldingRanges(session, foldsQuery);
+      for (const foldingRange of foldingRanges) {
+        assertValidTextRange(source, foldingRange.range);
+      }
+
+      const selection = collectSelectionPath(session, { line: 0, character: 14 });
+      expect(selection.ranges).toContainEqual({
+        start: { line: 0, character: 10 },
+        end: { line: 0, character: 20 },
+      });
+      for (const range of selection.ranges) {
+        assertValidTextRange(source, range);
+      }
+    } finally {
+      highlightsQuery?.delete();
+      foldsQuery?.delete();
+      manager.dispose();
+      runtime.dispose();
+    }
+  });
 });

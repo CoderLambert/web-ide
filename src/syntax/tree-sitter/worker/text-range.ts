@@ -8,8 +8,7 @@ function lineAt(text: string, row: number): string {
   for (let index = 0; index <= text.length; index += 1) {
     if (index === text.length || text.charCodeAt(index) === 0x0a) {
       if (currentRow === row) {
-        const line = text.slice(lineStart, index);
-        return line.endsWith("\r") ? line.slice(0, -1) : line;
+        return text.slice(lineStart, index);
       }
       currentRow += 1;
       lineStart = index + 1;
@@ -29,9 +28,11 @@ export function treeSitterPositionToTextPosition(text: string, position: Point):
     throw new Error(`Tree-sitter returned an invalid UTF-16 column ${position.column}.`);
   }
 
+  const monacoLineLength = line.endsWith("\r") ? line.length - 1 : line.length;
+
   return {
     line: position.row,
-    character: position.column,
+    character: Math.min(position.column, monacoLineLength),
   };
 }
 

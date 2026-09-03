@@ -48,14 +48,22 @@ interface BoundaryMetric {
 function measureBoundaries(text: string, offsets: readonly number[]): Map<number, BoundaryMetric> {
   const boundaries = [...new Set(offsets)].sort((left, right) => left - right);
   const metrics = new Map<number, BoundaryMetric>();
-  let boundaryIndex = 0;
+  let offset = 0;
+  let row = 0;
+  let column = 0;
 
-  while (boundaryIndex < boundaries.length) {
-    const boundary = boundaries[boundaryIndex];
-    metrics.set(boundary, { position: positionAtOffset(text, boundary) });
-    while (boundaries[boundaryIndex] === boundary) {
-      boundaryIndex += 1;
+  for (const boundary of boundaries) {
+    while (offset < boundary) {
+      if (text.charCodeAt(offset) === 0x0a) {
+        row += 1;
+        column = 0;
+      } else {
+        column += 1;
+      }
+      offset += 1;
     }
+
+    metrics.set(boundary, { position: { row, column } });
   }
 
   return metrics;
@@ -82,22 +90,6 @@ function measureReplacement(start: TreeSitterPoint, text: string): ReplacementMe
       column: text.length - lastNewline - 1,
     },
   };
-}
-
-function positionAtOffset(text: string, offset: number): TreeSitterPoint {
-  if (!isInteger(offset) || offset < 0 || offset > text.length) {
-    invalid("A text change boundary is outside the UTF-16 text boundaries.");
-  }
-
-  const lineStart = text.lastIndexOf("\n", offset - 1) + 1;
-  let row = 0;
-  for (let index = 0; index < lineStart; index += 1) {
-    if (text.charCodeAt(index) === 0x0a) {
-      row += 1;
-    }
-  }
-
-  return { row, column: offset - lineStart };
 }
 
 function validateChanges(text: string, changes: readonly TextChange[]): TextChange[] {
