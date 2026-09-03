@@ -10,10 +10,11 @@ M1 Syntax Foundation       PASS / sealed
 M2 Syntax UX               PASS / sealed
 M2.5 Workspace Foundation  active
 W-01                       PASS / sealed
-Next                       W-02 WorkspaceFileSystem Contract
+W-02                       PASS / sealed
+Next                       W-03 BackendWorkspaceFileSystem
 ```
 
-当前执行入口是 `04_M25_WORKSPACE_FOUNDATION.md`；M2 已 sealed，不因 M2.5 开发重新打开。W-01 已完成并 sealed，后续从 W-02 开始。
+当前执行入口是 `04_M25_WORKSPACE_FOUNDATION.md`；M2 已 sealed，不因 M2.5 开发重新打开。W-01 与 W-02 已完成并 sealed，后续从 W-03 开始。
 
 ## 使用方式
 

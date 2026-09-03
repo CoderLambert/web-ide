@@ -8,7 +8,8 @@ M1 PASS / sealed
 M2 PASS / sealed
 M2.5 active
 W-01 PASS / sealed
-Next: W-02 WorkspaceFileSystem Contract
+W-02 PASS / sealed
+Next: W-03 BackendWorkspaceFileSystem
 ```
 
 ## Phase S0
