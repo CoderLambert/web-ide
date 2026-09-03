@@ -4,11 +4,17 @@ import {
   ProtocolDecodeError,
   type ApplyChanges,
   type CloseDocument,
+  type FoldingRangesResult,
+  type GetFoldingRanges,
+  type GetHighlights,
+  type GetSelectionRanges,
+  type HighlightsResult,
   type InspectDocument,
   type InspectResult,
   type OpenDocument,
   type ParseResult,
   type ReplaceDocument,
+  type SelectionRangesResult,
   type WorkerError,
   type WorkerRequest,
   type WorkerResponse,
@@ -21,7 +27,10 @@ export type TreeSitterClientRequest =
   | Omit<ApplyChanges, OwnedRequestFields>
   | Omit<ReplaceDocument, OwnedRequestFields>
   | Omit<CloseDocument, OwnedRequestFields>
-  | Omit<InspectDocument, OwnedRequestFields>;
+  | Omit<InspectDocument, OwnedRequestFields>
+  | Omit<GetHighlights, OwnedRequestFields>
+  | Omit<GetFoldingRanges, OwnedRequestFields>
+  | Omit<GetSelectionRanges, OwnedRequestFields>;
 
 export interface TreeSitterClientWorker {
   postMessage(message: WorkerRequest): void;
@@ -72,6 +81,9 @@ function isWorkerRequest(message: WorkerRequest | WorkerResponse): message is Wo
     case "ReplaceDocument":
     case "CloseDocument":
     case "InspectDocument":
+    case "GetHighlights":
+    case "GetFoldingRanges":
+    case "GetSelectionRanges":
       return true;
     default:
       return false;
@@ -221,6 +233,9 @@ export class TreeSitterClient {
       if (
         decoded.type !== "ParseResult" &&
         decoded.type !== "InspectResult" &&
+        decoded.type !== "HighlightsResult" &&
+        decoded.type !== "FoldingRangesResult" &&
+        decoded.type !== "SelectionRangesResult" &&
         decoded.type !== "WorkerError"
       ) {
         return;
@@ -251,7 +266,13 @@ export class TreeSitterClient {
   }
 
   private matchesPending(
-    response: ParseResult | InspectResult | WorkerError,
+    response:
+      | ParseResult
+      | InspectResult
+      | HighlightsResult
+      | FoldingRangesResult
+      | SelectionRangesResult
+      | WorkerError,
     pending: PendingRequest,
   ): boolean {
     if (
@@ -261,7 +282,13 @@ export class TreeSitterClient {
       return false;
     }
 
-    if (response.type === "ParseResult" || response.type === "InspectResult") {
+    if (
+      response.type === "ParseResult" ||
+      response.type === "InspectResult" ||
+      response.type === "HighlightsResult" ||
+      response.type === "FoldingRangesResult" ||
+      response.type === "SelectionRangesResult"
+    ) {
       return (
         response.sessionId === pending.sessionId &&
         response.documentUri === pending.documentUri &&
