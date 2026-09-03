@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as IdeRouteImport } from './routes/ide'
+import { Route as ApiWorkspaceRouteImport } from './routes/api/workspace'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -22,31 +23,40 @@ const IdeRoute = IdeRouteImport.update({
   path: '/ide',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiWorkspaceRoute = ApiWorkspaceRouteImport.update({
+  id: '/api/workspace',
+  path: '/api/workspace',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/ide': typeof IdeRoute
+  '/api/workspace': typeof ApiWorkspaceRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/ide': typeof IdeRoute
+  '/api/workspace': typeof ApiWorkspaceRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/ide': typeof IdeRoute
+  '/api/workspace': typeof ApiWorkspaceRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/ide'
+  fullPaths: '/' | '/ide' | '/api/workspace'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/ide'
-  id: '__root__' | '/' | '/ide'
+  to: '/' | '/ide' | '/api/workspace'
+  id: '__root__' | '/' | '/ide' | '/api/workspace'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   IdeRoute: typeof IdeRoute
+  ApiWorkspaceRoute: typeof ApiWorkspaceRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -65,12 +75,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IdeRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/workspace': {
+      id: '/api/workspace'
+      path: '/api/workspace'
+      fullPath: '/api/workspace'
+      preLoaderRoute: typeof ApiWorkspaceRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   IdeRoute: IdeRoute,
+  ApiWorkspaceRoute: ApiWorkspaceRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

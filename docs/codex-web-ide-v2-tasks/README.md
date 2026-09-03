@@ -12,10 +12,11 @@ M2.5 Workspace Foundation  active
 W-01                       PASS / sealed
 W-02                       PASS / sealed
 W-03                       PASS / sealed
-Next                       W-04 Workspace API / RemoteWorkspaceFileSystem
+W-04                       PASS / sealed
+Next                       W-05 Monaco Binding + Dirty Overlay
 ```
 
-当前执行入口是 `04_M25_WORKSPACE_FOUNDATION.md`；M2 已 sealed，不因 M2.5 开发重新打开。W-01 至 W-03 已完成并 sealed，后续从 W-04 开始。
+当前执行入口是 `04_M25_WORKSPACE_FOUNDATION.md`；M2 已 sealed，不因 M2.5 开发重新打开。W-01 至 W-04 已完成并 sealed，后续从 W-05 开始。
 
 ## 使用方式
 

@@ -10,7 +10,8 @@ M2.5 active
 W-01 PASS / sealed
 W-02 PASS / sealed
 W-03 PASS / sealed
-Next: W-04 Workspace API / RemoteWorkspaceFileSystem
+W-04 PASS / sealed
+Next: W-05 Monaco Binding + Dirty Overlay
 ```
 
 ## Phase S0
