@@ -9,13 +9,7 @@ describe("LanguageRegistry", () => {
 
     registry.register(sqlLanguageDefinition);
 
-    expect(registry.get("sql")).toEqual({
-      id: "sql",
-      extensions: [".sql"],
-      syntax: {
-        grammarWasmPath: "/languages/sql/tree-sitter-sql.wasm",
-      },
-    });
+    expect(registry.get("sql")).toBe(sqlLanguageDefinition);
     expect(registry.has("sql")).toBe(true);
   });
 
