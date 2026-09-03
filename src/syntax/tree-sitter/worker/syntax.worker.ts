@@ -7,6 +7,8 @@ import type {
   InspectDocument,
   InspectResult,
   ParseResult,
+  SelectionRangesResult,
+  GetSelectionRanges,
   WorkerRequest,
 } from "../protocol";
 import { DocumentManager, DocumentManagerError } from "./document-manager";
@@ -14,6 +16,7 @@ import { collectHighlightTokens } from "./highlight";
 import { collectFoldingRanges } from "./folding";
 import { AstInspector } from "./inspector";
 import { WorkerRuntime } from "./runtime";
+import { collectSelectionPaths } from "./selection";
 import { installWorkerHost } from "./worker";
 
 interface WorkerBootstrapMessage {
@@ -116,6 +119,8 @@ function startWorker(workerGeneration: number): void {
           return getHighlightsForRequest(request, documents, runtime);
         case "GetFoldingRanges":
           return getFoldingRangesForRequest(request, documents, runtime);
+        case "GetSelectionRanges":
+          return getSelectionRangesForRequest(request, documents);
       }
     },
   });
@@ -216,6 +221,42 @@ async function getFoldingRangesForRequest(
     documentUri: session.documentUri,
     documentVersion: session.documentVersion,
     ranges: collectFoldingRanges(session, query),
+  };
+}
+
+function getSelectionRangesForRequest(
+  request: GetSelectionRanges,
+  documents: DocumentManager,
+): SelectionRangesResult {
+  const session = documents.getSession(request.sessionId);
+  if (session === undefined || session.documentUri !== request.documentUri) {
+    throw new DocumentManagerError(
+      "SESSION_NOT_FOUND",
+      `Session "${request.sessionId}" does not own document "${request.documentUri}".`,
+    );
+  }
+  if (session.state === "desynced") {
+    throw new DocumentManagerError(
+      "RESYNC_REQUIRED",
+      `Session "${request.sessionId}" requires a full document resync.`,
+    );
+  }
+  if (request.expectedVersion !== session.documentVersion) {
+    throw new DocumentManagerError(
+      "VERSION_MISMATCH",
+      `Expected document version ${request.expectedVersion}, found ${session.documentVersion}.`,
+    );
+  }
+
+  return {
+    type: "SelectionRangesResult",
+    protocolVersion: request.protocolVersion,
+    workerGeneration: request.workerGeneration,
+    requestId: request.requestId,
+    sessionId: session.sessionId,
+    documentUri: session.documentUri,
+    documentVersion: session.documentVersion,
+    selections: collectSelectionPaths(session, request.positions),
   };
 }
 
