@@ -1,6 +1,45 @@
-import { defineConfig, lazyPlugins } from "vite-plus";
+import { defineConfig, lazyPlugins, type Connect, type Plugin } from "vite-plus";
 import { tanstackStart } from "@tanstack/react-start/plugin/vite";
 import viteReact from "@vitejs/plugin-react";
+import { randomUUID } from "node:crypto";
+
+const CHROME_DEVTOOLS_WORKSPACE_PATH = "/.well-known/appspecific/com.chrome.devtools.json";
+const responseBody = JSON.stringify({
+  workspace: {
+    root: process.cwd(),
+    uuid: randomUUID(),
+  },
+});
+
+const chromeDevToolsWorkspaceMiddleware: Connect.NextHandleFunction = (request, response, next) => {
+  const requestPath = request.url?.split("?", 1)[0];
+  if (
+    requestPath !== CHROME_DEVTOOLS_WORKSPACE_PATH ||
+    (request.method !== "GET" && request.method !== "HEAD")
+  ) {
+    next();
+    return;
+  }
+
+  response.statusCode = 200;
+  response.setHeader("Content-Type", "application/json; charset=utf-8");
+  response.setHeader("Cache-Control", "no-store");
+  response.end(request.method === "HEAD" ? undefined : responseBody);
+};
+
+function chromeDevToolsWorkspacePlugin(): Plugin {
+  return {
+    name: "web-ide:chrome-devtools-workspace",
+    apply: "serve",
+    enforce: "pre",
+    configureServer(server) {
+      server.middlewares.use(chromeDevToolsWorkspaceMiddleware);
+    },
+    configurePreviewServer(server) {
+      server.middlewares.use(chromeDevToolsWorkspaceMiddleware);
+    },
+  };
+}
 
 export default defineConfig({
   run: {
@@ -45,5 +84,5 @@ export default defineConfig({
   resolve: {
     tsconfigPaths: true,
   },
-  plugins: lazyPlugins(() => [tanstackStart(), viteReact()]),
+  plugins: lazyPlugins(() => [chromeDevToolsWorkspacePlugin(), tanstackStart(), viteReact()]),
 });
