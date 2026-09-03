@@ -1,14 +1,6 @@
 export const validWorkspacePaths = ["src/main.ts", "src/lib/a.ts"] as const;
 
-export const invalidWorkspacePaths = [
-  "/a",
-  "a/",
-  "a//b",
-  "./a",
-  "a/../b",
-  "a\\b",
-  "a\0b",
-] as const;
+export const invalidWorkspacePaths = ["/a", "a/", "a//b", "./a", "a/../b", "a\\b", "a\0b"] as const;
 
 export const encodedTraversalTransportPaths = [
   "%2e%2e/secret.ts",

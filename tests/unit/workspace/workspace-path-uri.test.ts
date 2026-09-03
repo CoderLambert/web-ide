@@ -42,12 +42,8 @@ describe("WorkspacePath", () => {
 
 describe("WorkspaceUriMapper", () => {
   it("maps the frozen canonical URI example", () => {
-    expect(workspaceUriMapper.toUri("src/main.ts")).toBe(
-      "file:///workspace/src/main.ts",
-    );
-    expect(workspaceUriMapper.fromUri("file:///workspace/src/main.ts")).toBe(
-      "src/main.ts",
-    );
+    expect(workspaceUriMapper.toUri("src/main.ts")).toBe("file:///workspace/src/main.ts");
+    expect(workspaceUriMapper.fromUri("file:///workspace/src/main.ts")).toBe("src/main.ts");
   });
 
   it("round-trips canonical paths without losing encoded characters", () => {
