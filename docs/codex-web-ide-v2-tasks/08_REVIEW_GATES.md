@@ -65,6 +65,14 @@ Recovery 期间 pending request bounded 且不会因 restore response 误杀新 
 必须检查：
 
 ```text
+普通 M2 Task 使用已经定义的 Vite+ Validation Task：vp run validate
+Agent 不重新手工组合 format/lint/typecheck/unit/build/preview
+M2-02 sync-language-assets 保持 mutating maintenance command，不进入 normal validation/commit hook
+M2-03 完成 verifier 后才注册 verify:language-assets
+M2-09 仅在 assets verifier 与 tests/m2 真实存在后注册 verify:m2
+Phase Final 先 bootstrap once，再 Project Validation
+Phase Final check once / unit once / tsc once / build once / preview once / cleanup once
+S0/M1/M2 共用同一 production preview
 当前 SQL Grammar 实际只自带 highlights/indents，不伪造 folds/injections/locals
 M2 只同步当前需要的 highlights + folds
 folds 来源 repository/revision/path/license 可追踪并对 pinned grammar 编译/执行验证
@@ -100,6 +108,8 @@ derived capability request bounded，不无界占用 FIFO
 - Worker recovery/dispose 后 Query resource 泄漏或无法重建。
 - 未经复现问题升级 `web-tree-sitter` 或引入 Worker Pool / Scheduler。
 - Tree-sitter 与 LSP 同时成为第一阶段 Semantic Token Owner。
+- M2 Final Gate 嵌套 `verify:s0` / `verify:m1`，导致重复 build / preview → `M2 FAIL`。
+- 把 mutating `sync-language-assets` 放入标准 validation / commit hook → `M2 FAIL`。
 
 ---
 

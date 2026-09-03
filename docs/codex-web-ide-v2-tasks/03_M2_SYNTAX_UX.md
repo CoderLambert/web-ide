@@ -28,6 +28,20 @@ Monaco
 - Query 资产必须 pinned、可追踪、可离线验证；应用正常 build/runtime 不访问上游仓库。
 - `web-tree-sitter 0.25.10` 继续保持冻结，只有可重复的真实兼容/资源问题才能触发升级评估。
 
+## M2 Validation Workflow
+
+普通 M2 Task 的标准项目验证统一执行：
+
+```bash
+vp run validate
+```
+
+当前 `validate` 已统一编排 `vp check` 与 `vp test run tests/unit`。Agent 不再自行组合 `pnpm lint`、`pnpm typecheck`、`pnpm check`、`pnpm test:unit` 等标准工具链命令；Validation 与 pre-commit 都必须保持 non-mutating。
+
+Task 自身的行为测试优先进入 `tests/unit`，由公共 `vp run validate` 统一覆盖。真正独有的业务 verifier 由对应 Task 明确注册后才能调用。
+
+本次只调整验证执行方式，不改变 M2-01 → M2-09 dependency graph、M1 sealed architecture 或既有 correctness requirements。
+
 ---
 
 # M2-01 — Query Asset Decision / Manifest
@@ -138,6 +152,18 @@ src/languages/sql/*
 
 提供显式维护命令，将 pinned Query 同步成仓库内的本地 artifact，并应用最小、声明式的 runtime compatibility / project patch。
 
+## 命令边界
+
+`scripts/sync-language-assets.mjs` 是 **mutating maintenance command**，负责：
+
+```text
+fetch/copy pinned source
+→ apply patch
+→ 更新 vendored artifacts
+```
+
+它不是项目 Validation。禁止把它接入 `vp run validate`、`vp staged`、pre-commit 或 normal Phase validation；标准 Validation 必须 non-mutating。
+
 ## 实现
 
 使用现有 Node ESM 工具风格：
@@ -197,6 +223,8 @@ Asset Pipeline Agent 可以独立实现该脚本。
 
 在 Provider 和 Query runtime 开发前，离线证明本地 Query artifact 与 pinned Grammar **编译兼容且执行语义正确**。
 
+`scripts/verify-language-assets.mjs` 是 **non-mutating project verifier**，只读取本地 pinned grammar/query artifact 并返回验证结果，不修改源码、vendored artifact 或 `node_modules`。
+
 ## 实现
 
 建立：
@@ -230,6 +258,33 @@ multiline statement        → @fold capture
 
 失败必须返回非 0。
 
+## Vite+ 专项 Task 注册
+
+只有 M2-03 完成 `verify-language-assets.mjs` 后，才允许同时修改 `vite.config.ts`，注册正式专项 Vite+ Task：
+
+```bash
+vp run verify:language-assets
+```
+
+该 Task 的逻辑必须是：
+
+```text
+base validation
+→ verify-language-assets.mjs
+```
+
+可使用当前固定 Vite+ `0.3.0` 支持的 `dependsOn` 表达 `validate` → verifier 的复用关系；不要为了更漂亮的配置升级 Vite+。M2-03 的最终验证入口必须包含 `vp run verify:language-assets`，但专项 Task 不能替代下列 correctness requirements：
+
+```text
+offline grammar/query load
+query compile
+real parse + execute
+keyword/string/integer/float/comment/function fixture
+folding fixture
+numeric predicate regression
+invalid node type failure
+```
+
 ## 验证
 
 - 当前 pinned + patched artifacts PASS。
@@ -240,6 +295,28 @@ multiline statement        → @fold capture
 ## 可分配子 Agent
 
 Validation Agent 可独立负责，不修改 sync 脚本。
+
+---
+
+## M2-04～M2-08 统一执行规则
+
+这些普通 M2 Task 完成实现后，标准项目 Gate 统一执行：
+
+```bash
+vp run validate
+```
+
+Implementation Agent 可按需运行局部测试和 `vp check --fix`；Main Agent 负责调用确定的 VP Task，不重新手工组合 format/lint/typecheck/unit 等命令。各 Task 已定义的行为验证继续保留，例如：
+
+```text
+Query compile retry / Query dispose / Worker recovery
+protocol runtime decoder / stale rejection
+Highlight bounded queue
+Folding invalid SQL
+Selection Unicode / emoji / CRLF
+```
+
+这些是 correctness requirements，不是重复的工具链命令，不能删除或用公共 `validate` 的描述替代。
 
 ---
 
@@ -515,29 +592,117 @@ identifier
 
 全部 M2 task PASS。
 
-## 实现
+## 固定 Phase Final 入口
 
-建立可重复：
+M2-09 才正式建立 `verify:m2` Vite+ Task。正式 Phase Final 的执行入口固定为：
 
 ```bash
-pnpm verify:m2
+pnpm install --frozen-lockfile
+vp run verify:m2
 ```
 
-保持和 M1 一样简单，不引入新的 Task Runner。
-
-至少覆盖：
+这是一个逻辑 Phase Final Gate 的两个固定阶段：
 
 ```text
-frozen install
-verify-language-assets
-unit tests
-typecheck
-lint/check
-build
-production preview
-S0/M1 regression E2E
-M2 Highlight/Folding/Selection E2E
+Bootstrap
+→ Project Validation
 ```
+
+不是让 Agent 自己决定执行顺序，也不能改回旧的手工 verifier 入口。
+
+### Bootstrap
+
+```bash
+pnpm install --frozen-lockfile
+```
+
+只执行一次，负责：
+
+```text
+dependency installation
+lockfile consistency verification
+environment bootstrap
+```
+
+它属于环境 bootstrap，不属于 `verify:m2`。运行中的 VP Task 依赖项目依赖和 Vite+ 已经可执行，因此不得再负责安装或修改 `node_modules`；fresh environment 中 VP 尚不可执行时，也不能把安装 VP 所需依赖的职责放入 VP Task 内。
+
+### Project Validation
+
+```bash
+vp run verify:m2
+```
+
+负责项目代码与 M2 capability 验收。只有在 `verify-language-assets.mjs` 与 `tests/m2` 已真实存在时，才允许在 `vite.config.ts` 注册该 Task。
+
+`verify:m2` 的逻辑至少覆盖以下阶段，并保证相同基础步骤不重复执行：
+
+```text
+vp run validate
+→ tsc --noEmit (compatibility check)
+→ verify-language-assets
+→ vp build
+→ production preview
+→ S0 regression / M1 regression / M2 E2E
+→ resource diagnostics
+→ cleanup
+```
+
+注册时优先复用当前固定 Vite+ `0.3.0` 支持的 Task composition：让 `verify:m2` 复用 `verify:language-assets` 的 Task dependency，再执行自身的 `tsc`、build、preview、regression 和 cleanup；这样 `vp run validate` 与 verifier 都只执行一次。`verify:language-assets` 的独立入口仍是 `vp run verify:language-assets`；在 `verify:m2` 中不要在已经复用该 dependency 后再次嵌套执行 base validation，以满足：
+
+```text
+check once
+unit once
+tsc once
+build once
+preview once
+cleanup once
+```
+
+## 为什么 Phase Final 暂时保留 tsc
+
+普通 Task 的 `vp run validate` 已通过 `vp check` 做标准 Vite+ type checking，因此不再由每个 Task 额外执行 `tsc --noEmit`。M2 Phase Final 暂时保留一次 `tsc --noEmit` 作为兼容性保护，原因是：
+
+```text
+当前仓库历史验证流程长期使用 tsc --noEmit
+Vite+ type checking 与 tsc 的诊断实现并非必须完全等价
+当前没有必要在 M2 开始前顺手删除这一保护
+```
+
+是否最终移除 tsc，在 M2 完成后根据实际验证数据单独评估；本任务不扩大范围。
+
+## Production Preview 原则
+
+M2 Final Gate 必须满足：
+
+```text
+vp build once
+vp preview once
+```
+
+然后在同一个 production preview 上运行：
+
+```text
+tests/s0
+tests/m1
+tests/m2
+```
+
+禁止 `verify:s0 → verify:m1 → verify:m2` 这种嵌套关系，因为它会重复 install、check、build、preview。S0/M1 sealed verifier 保持原样；M2 Final Gate 复用 regression suites，而不是嵌套 sealed verifier。
+
+## Preview lifecycle
+
+只有当 `tests/m2` 已真实存在且 production Phase Gate 已真实存在时，M2-09 才允许增加最小 preview orchestration helper。helper 只负责：
+
+```text
+spawn vp preview
+→ wait ready
+→ run Playwright
+→ cleanup on success
+→ cleanup on failure
+→ cleanup on timeout
+```
+
+不要建设 generic process framework、task runner、scheduler 或 plugin lifecycle system，也不要为了复用去重构 `verify-s0.mjs`、`verify-m1.mjs`。
 
 ## 必须验证
 
