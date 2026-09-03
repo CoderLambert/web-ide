@@ -14,6 +14,11 @@ export default defineConfig({
         dependsOn: ["validate"],
         cache: false,
       },
+      "verify:sql-lab": {
+        command: "node scripts/verify-sql-lab.mjs",
+        dependsOn: ["verify:language-assets"],
+        cache: false,
+      },
       "verify:m2": {
         command: "node scripts/verify-m2.mjs",
         dependsOn: ["verify:language-assets"],
