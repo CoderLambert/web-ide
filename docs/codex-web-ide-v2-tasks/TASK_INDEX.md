@@ -11,7 +11,8 @@ W-01 PASS / sealed
 W-02 PASS / sealed
 W-03 PASS / sealed
 W-04 PASS / sealed
-Next: W-05 Monaco Binding + Dirty Overlay
+W-05 PASS / sealed
+Next: W-06 Workspace Operations Lifecycle
 ```
 
 ## Phase S0
