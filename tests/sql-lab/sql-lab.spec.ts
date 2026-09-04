@@ -253,7 +253,9 @@ test("proves the production SQL Lab API and browser flow", async ({ page, reques
     "SELECT 41 AS answer;",
   );
 
-  await page.locator('[data-testid="sql-lab-new"]').click();
+  const newButton = page.locator('[data-testid="sql-lab-new"]');
+  await newButton.dispatchEvent("click");
+  await newButton.dispatchEvent("click");
   const newFile = page.getByRole("button", { name: "query.sql", exact: true });
   await expect(newFile).toBeVisible();
   expect(workspaceListPaths).toEqual(["", "src", ""]);

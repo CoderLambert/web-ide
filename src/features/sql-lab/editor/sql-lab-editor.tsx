@@ -9,6 +9,7 @@ import {
   isSqlFileEntry,
   listSqlDirectory,
   nextSqlFileName,
+  scheduleDirectoryLoad,
 } from "@/features/sql-lab/editor/sql-lab-workspace";
 import { resolveSqlQuerySource, type SqlQuerySourceMode } from "@/features/sql-lab/query-source";
 import { RemoteWorkspaceFileSystem } from "@/workspace/remote-workspace-file-system";
@@ -63,8 +64,10 @@ export function SqlLabEditor({
   const openFileRef = useRef<(path: WorkspacePath) => Promise<void>>(async () => undefined);
   const loadDirectoryRef = useRef<DirectoryLoader>(async () => []);
   const loadedDirectoriesRef = useRef(new Set<string>());
-  const loadingDirectoriesRef = useRef(new Set<string>());
+  const directoryLoadsRef = useRef(new Map<string, Promise<WorkspaceEntry[]>>());
   const directoryEntriesRef = useRef(new Map<string, WorkspaceEntry[]>());
+  const mountedRef = useRef(false);
+  const creatingFileRef = useRef(false);
   const runQueryRef = useRef<(mode: SqlQuerySourceMode) => Promise<void>>(async () => undefined);
   const explainQueryRef = useRef<(mode: SqlQuerySourceMode) => Promise<void>>(
     async () => undefined,
@@ -80,6 +83,7 @@ export function SqlLabEditor({
   const [activePath, setActivePath] = useState<WorkspacePath>();
   const [dirty, setDirty] = useState(false);
   const [state, setState] = useState<"loading" | "ready" | "error">("loading");
+  const [creatingFile, setCreatingFile] = useState(false);
   const [error, setError] = useState("");
   onRunRef.current = onRun;
   onExplainRef.current = onExplain;
@@ -88,8 +92,9 @@ export function SqlLabEditor({
   useEffect(() => {
     const host = hostRef.current;
     let cancelled = false;
+    mountedRef.current = true;
     loadedDirectoriesRef.current.clear();
-    loadingDirectoriesRef.current.clear();
+    directoryLoadsRef.current.clear();
     directoryEntriesRef.current = new Map();
     setDirectoryEntries(new Map());
     setExpandedDirectories(new Set());
@@ -133,24 +138,18 @@ export function SqlLabEditor({
           if (!force && loadedDirectoriesRef.current.has(path)) {
             return cached ?? [];
           }
-          if (loadingDirectoriesRef.current.has(path)) {
-            return cached ?? [];
-          }
 
-          loadingDirectoriesRef.current.add(path);
-          try {
-            const listed = await listSqlDirectory(fileSystem, path);
-            if (!cancelled) {
-              loadedDirectoriesRef.current.add(path);
-              const nextEntries = new Map(directoryEntriesRef.current);
-              nextEntries.set(path, listed);
-              directoryEntriesRef.current = nextEntries;
-              setDirectoryEntries(nextEntries);
-            }
-            return listed;
-          } finally {
-            loadingDirectoriesRef.current.delete(path);
+          const listed = await scheduleDirectoryLoad(directoryLoadsRef.current, path, force, () =>
+            listSqlDirectory(fileSystem, path),
+          );
+          if (!cancelled) {
+            loadedDirectoriesRef.current.add(path);
+            const nextEntries = new Map(directoryEntriesRef.current);
+            nextEntries.set(path, listed);
+            directoryEntriesRef.current = nextEntries;
+            setDirectoryEntries(nextEntries);
           }
+          return listed;
         };
         loadDirectoryRef.current = loadDirectory;
         const listed = await loadDirectory("");
@@ -183,6 +182,8 @@ export function SqlLabEditor({
 
     return () => {
       cancelled = true;
+      mountedRef.current = false;
+      creatingFileRef.current = false;
       openFileRef.current = async () => undefined;
       loadDirectoryRef.current = async () => [];
       runQueryRef.current = async () => undefined;
@@ -295,19 +296,23 @@ export function SqlLabEditor({
     try {
       await loadDirectoryRef.current(path);
     } catch (directoryError: unknown) {
-      setError(
-        directoryError instanceof Error
-          ? directoryError.message
-          : "Unable to load workspace directory.",
-      );
+      if (mountedRef.current) {
+        setError(
+          directoryError instanceof Error
+            ? directoryError.message
+            : "Unable to load workspace directory.",
+        );
+      }
     }
   }
 
   async function createFile(): Promise<void> {
     const fileSystem = fileSystemRef.current;
-    if (fileSystem === undefined) {
+    if (fileSystem === undefined || state !== "ready" || creatingFile || creatingFileRef.current) {
       return;
     }
+    creatingFileRef.current = true;
+    setCreatingFile(true);
     const rootFiles = (directoryEntries.get("") ?? [])
       .filter(isSqlFileEntry)
       .map((entry) => entry.path);
@@ -317,9 +322,16 @@ export function SqlLabEditor({
       await loadDirectoryRef.current("", true);
       await openFileRef.current(path);
     } catch (creationError: unknown) {
-      setError(
-        creationError instanceof Error ? creationError.message : "Unable to create SQL file.",
-      );
+      if (mountedRef.current) {
+        setError(
+          creationError instanceof Error ? creationError.message : "Unable to create SQL file.",
+        );
+      }
+    } finally {
+      creatingFileRef.current = false;
+      if (mountedRef.current) {
+        setCreatingFile(false);
+      }
     }
   }
 
@@ -384,7 +396,12 @@ export function SqlLabEditor({
             {dirty ? " *" : ""}
           </span>
         ) : null}
-        <button data-testid="sql-lab-new" onClick={() => void createFile()} type="button">
+        <button
+          data-testid="sql-lab-new"
+          disabled={state !== "ready" || creatingFile}
+          onClick={() => void createFile()}
+          type="button"
+        >
           New
         </button>
         <button

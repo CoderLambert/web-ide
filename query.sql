@@ -1,172 +1,88 @@
 -- ============================================================
--- SQL Test Dataset
--- Dialect: SQLite
--- Purpose: SQL editor / parser / executor / syntax highlight testing
+-- Web IDE SQL Lab - SQLite Test Queries
+--
+-- Safe to run with "Run All".
+-- Uses the built-in SQL Lab demo database.
+-- Covers common parser / editor / executor syntax.
 -- ============================================================
 
-PRAGMA foreign_keys = ON;
-
--- ------------------------------------------------------------
--- 1. Drop old tables
--- ------------------------------------------------------------
-DROP TABLE IF EXISTS order_items;
-DROP TABLE IF EXISTS orders;
-DROP TABLE IF EXISTS products;
-DROP TABLE IF EXISTS users;
-
--- ------------------------------------------------------------
--- 2. Create tables
--- ------------------------------------------------------------
-CREATE TABLE users (
-    id          INTEGER PRIMARY KEY AUTOINCREMENT,
-    username    TEXT NOT NULL UNIQUE,
-    email       TEXT NOT NULL UNIQUE,
-    age         INTEGER CHECK (age >= 0),
-    status      TEXT NOT NULL DEFAULT 'active',
-    created_at  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
-);
-
-CREATE TABLE products (
-    id          INTEGER PRIMARY KEY AUTOINCREMENT,
-    name        TEXT NOT NULL,
-    category    TEXT NOT NULL,
-    price       DECIMAL(10, 2) NOT NULL CHECK (price >= 0),
-    stock       INTEGER NOT NULL DEFAULT 0 CHECK (stock >= 0),
-    created_at  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
-);
-
-CREATE TABLE orders (
-    id          INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id     INTEGER NOT NULL,
-    order_no    TEXT NOT NULL UNIQUE,
-    total       DECIMAL(10, 2) NOT NULL DEFAULT 0,
-    status      TEXT NOT NULL DEFAULT 'pending',
-    created_at  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (user_id) REFERENCES users(id)
-);
-
-CREATE TABLE order_items (
-    id          INTEGER PRIMARY KEY AUTOINCREMENT,
-    order_id    INTEGER NOT NULL,
-    product_id  INTEGER NOT NULL,
-    quantity    INTEGER NOT NULL CHECK (quantity > 0),
-    unit_price  DECIMAL(10, 2) NOT NULL CHECK (unit_price >= 0),
-    FOREIGN KEY (order_id) REFERENCES orders(id) ON DELETE CASCADE,
-    FOREIGN KEY (product_id) REFERENCES products(id)
-);
-
--- ------------------------------------------------------------
--- 3. Insert test data
--- ------------------------------------------------------------
-INSERT INTO users (username, email, age, status) VALUES
-('alice',   'alice@example.com',   26, 'active'),
-('bob',     'bob@example.com',     31, 'active'),
-('charlie', 'charlie@example.com', 22, 'inactive'),
-('diana',   'diana@example.com',   35, 'active'),
-('eric',    'eric@example.com',    29, 'active');
-
-INSERT INTO products (name, category, price, stock) VALUES
-('Mechanical Keyboard', 'Electronics', 89.90, 25),
-('Wireless Mouse',      'Electronics', 39.50, 50),
-('USB-C Hub',           'Electronics', 59.00, 18),
-('Notebook',            'Stationery',   6.80, 100),
-('Gel Pen',             'Stationery',   2.50, 200),
-('Coffee Mug',          'Home',        12.90, 40);
-
-INSERT INTO orders (user_id, order_no, total, status, created_at) VALUES
-(1, 'ORD-2026-0001', 129.40, 'paid',      '2026-09-01 09:30:00'),
-(2, 'ORD-2026-0002',  59.00, 'shipped',   '2026-09-01 11:10:00'),
-(1, 'ORD-2026-0003',  18.60, 'completed', '2026-09-02 15:45:00'),
-(4, 'ORD-2026-0004', 102.80, 'pending',   '2026-09-03 08:20:00');
-
-INSERT INTO order_items (order_id, product_id, quantity, unit_price) VALUES
-(1, 1, 1, 89.90),
-(1, 2, 1, 39.50),
-(2, 3, 1, 59.00),
-(3, 4, 2,  6.80),
-(3, 5, 2,  2.50),
-(4, 2, 2, 39.50),
-(4, 6, 1, 12.90),
-(4, 4, 1,  6.80),
-(4, 5, 2,  2.50);
-
--- ------------------------------------------------------------
--- 4. Basic SELECT
--- ------------------------------------------------------------
-SELECT * FROM users;
-
+-- 1. Basic SELECT / ORDER BY
 SELECT
     id,
-    username,
+    name,
     email,
-    age
-FROM users
-WHERE status = 'active'
-ORDER BY age DESC;
+    region,
+    created_at
+FROM customers
+ORDER BY id;
 
--- ------------------------------------------------------------
--- 5. WHERE / LIKE / IN / BETWEEN
--- ------------------------------------------------------------
-SELECT *
+
+-- 2. WHERE / LIKE / IN / BETWEEN
+SELECT
+    id,
+    sku,
+    name,
+    category,
+    price,
+    stock
 FROM products
-WHERE price BETWEEN 10 AND 100
-  AND category IN ('Electronics', 'Home')
+WHERE price BETWEEN 30 AND 300
+  AND category IN ('Peripherals', 'Displays', 'Accessories')
   AND name LIKE '%o%'
 ORDER BY price DESC;
 
--- ------------------------------------------------------------
--- 6. JOIN
--- ------------------------------------------------------------
-SELECT
-    o.order_no,
-    u.username,
-    o.total,
-    o.status,
-    o.created_at
-FROM orders AS o
-INNER JOIN users AS u
-    ON u.id = o.user_id
-ORDER BY o.created_at DESC;
 
--- ------------------------------------------------------------
--- 7. Multi-table JOIN
--- ------------------------------------------------------------
+-- 3. INNER JOIN
 SELECT
-    o.order_no,
-    u.username,
+    o.id AS order_id,
+    c.name AS customer_name,
+    c.region,
+    o.status,
+    o.total_amount,
+    o.order_date
+FROM orders AS o
+JOIN customers AS c
+    ON c.id = o.customer_id
+ORDER BY o.order_date DESC;
+
+
+-- 4. Multi-table JOIN
+SELECT
+    o.id AS order_id,
+    c.name AS customer_name,
     p.name AS product_name,
     oi.quantity,
     oi.unit_price,
-    oi.quantity * oi.unit_price AS subtotal
+    ROUND(oi.quantity * oi.unit_price, 2) AS line_total
 FROM order_items AS oi
 JOIN orders AS o
     ON o.id = oi.order_id
-JOIN users AS u
-    ON u.id = o.user_id
+JOIN customers AS c
+    ON c.id = o.customer_id
 JOIN products AS p
     ON p.id = oi.product_id
 ORDER BY o.id, oi.id;
 
--- ------------------------------------------------------------
--- 8. GROUP BY / HAVING / aggregate functions
--- ------------------------------------------------------------
+
+-- 5. GROUP BY / HAVING / aggregates
 SELECT
-    u.username,
+    c.id,
+    c.name,
     COUNT(o.id) AS order_count,
-    COALESCE(SUM(o.total), 0) AS total_spent,
-    ROUND(AVG(o.total), 2) AS avg_order_amount
-FROM users AS u
+    ROUND(COALESCE(SUM(o.total_amount), 0), 2) AS total_spent,
+    ROUND(COALESCE(AVG(o.total_amount), 0), 2) AS average_order
+FROM customers AS c
 LEFT JOIN orders AS o
-    ON o.user_id = u.id
-GROUP BY u.id, u.username
+    ON o.customer_id = c.id
+GROUP BY c.id, c.name
 HAVING COUNT(o.id) >= 1
 ORDER BY total_spent DESC;
 
--- ------------------------------------------------------------
--- 9. Subquery
--- ------------------------------------------------------------
+
+-- 6. Scalar subquery
 SELECT
     name,
+    category,
     price
 FROM products
 WHERE price > (
@@ -175,43 +91,57 @@ WHERE price > (
 )
 ORDER BY price DESC;
 
--- ------------------------------------------------------------
--- 10. CASE expression
--- ------------------------------------------------------------
+
+-- 7. Correlated EXISTS
+SELECT
+    c.id,
+    c.name,
+    c.region
+FROM customers AS c
+WHERE EXISTS (
+    SELECT 1
+    FROM orders AS o
+    WHERE o.customer_id = c.id
+      AND o.status IN ('paid', 'shipped')
+)
+ORDER BY c.id;
+
+
+-- 8. CASE expression
 SELECT
     name,
     price,
+    stock,
     CASE
-        WHEN price >= 80 THEN 'expensive'
-        WHEN price >= 30 THEN 'medium'
-        ELSE 'cheap'
-    END AS price_level
+        WHEN stock = 0 THEN 'out_of_stock'
+        WHEN stock < 20 THEN 'low_stock'
+        WHEN stock < 60 THEN 'normal'
+        ELSE 'high_stock'
+    END AS stock_level
 FROM products
-ORDER BY price DESC;
+ORDER BY stock, name;
 
--- ------------------------------------------------------------
--- 11. CTE
--- ------------------------------------------------------------
-WITH user_order_stats AS (
+
+-- 9. CTE
+WITH customer_totals AS (
     SELECT
-        user_id,
+        customer_id,
         COUNT(*) AS order_count,
-        SUM(total) AS total_spent
+        SUM(total_amount) AS total_spent
     FROM orders
-    GROUP BY user_id
+    GROUP BY customer_id
 )
 SELECT
-    u.username,
-    COALESCE(s.order_count, 0) AS order_count,
-    COALESCE(s.total_spent, 0) AS total_spent
-FROM users AS u
-LEFT JOIN user_order_stats AS s
-    ON s.user_id = u.id
+    c.name,
+    COALESCE(t.order_count, 0) AS order_count,
+    ROUND(COALESCE(t.total_spent, 0), 2) AS total_spent
+FROM customers AS c
+LEFT JOIN customer_totals AS t
+    ON t.customer_id = c.id
 ORDER BY total_spent DESC;
 
--- ------------------------------------------------------------
--- 12. Window functions
--- ------------------------------------------------------------
+
+-- 10. Window functions
 SELECT
     name,
     category,
@@ -219,65 +149,74 @@ SELECT
     ROW_NUMBER() OVER (
         PARTITION BY category
         ORDER BY price DESC
-    ) AS category_rank
-FROM products;
+    ) AS category_rank,
+    ROUND(
+        AVG(price) OVER (PARTITION BY category),
+        2
+    ) AS category_average
+FROM products
+ORDER BY category, category_rank;
 
--- ------------------------------------------------------------
--- 13. UPDATE
--- ------------------------------------------------------------
-UPDATE products
-SET stock = stock - 1
-WHERE id = 1
-  AND stock > 0;
 
--- ------------------------------------------------------------
--- 14. Transaction test
--- ------------------------------------------------------------
-BEGIN TRANSACTION;
+-- 11. Recursive CTE
+WITH RECURSIVE sequence(value) AS (
+    VALUES (1)
 
-UPDATE users
-SET status = 'inactive'
-WHERE username = 'eric';
+    UNION ALL
 
--- Use ROLLBACK to undo the test change.
-ROLLBACK;
-
--- ------------------------------------------------------------
--- 15. Index
--- ------------------------------------------------------------
-CREATE INDEX IF NOT EXISTS idx_orders_user_id
-    ON orders(user_id);
-
-CREATE INDEX IF NOT EXISTS idx_products_category
-    ON products(category);
-
--- ------------------------------------------------------------
--- 16. View
--- ------------------------------------------------------------
-DROP VIEW IF EXISTS order_summary;
-
-CREATE VIEW order_summary AS
+    SELECT value + 1
+    FROM sequence
+    WHERE value < 5
+)
 SELECT
-    o.id,
-    o.order_no,
-    u.username,
-    o.total,
-    o.status,
-    o.created_at
-FROM orders AS o
-JOIN users AS u
-    ON u.id = o.user_id;
+    value,
+    value * value AS squared
+FROM sequence;
 
-SELECT * FROM order_summary;
 
--- ------------------------------------------------------------
--- 17. EXPLAIN QUERY PLAN
--- ------------------------------------------------------------
-EXPLAIN QUERY PLAN
-SELECT *
+-- 12. UNION ALL
+SELECT
+    'active_products' AS metric,
+    COUNT(*) AS value
+FROM products
+WHERE active = 1
+
+UNION ALL
+
+SELECT
+    'orders',
+    COUNT(*)
+FROM orders;
+
+
+-- 13. NULL / COALESCE / CAST / ROUND
+SELECT
+    NULL AS null_value,
+    COALESCE(NULL, 'fallback') AS fallback_value,
+    CAST(42 AS TEXT) AS text_value,
+    ROUND(123.4567, 2) AS rounded_value;
+
+
+-- 14. SQLite date functions
+SELECT
+    id,
+    order_date,
+    strftime('%Y-%m', order_date) AS order_month
 FROM orders
-WHERE user_id = 1;
+ORDER BY order_date;
 
--- ============================================================
--- End of file
--- ============================================================
+
+-- 15. Safe schema PRAGMA
+PRAGMA table_info(customers);
+
+
+-- 16. Safe index PRAGMA
+PRAGMA index_list(products);
+
+
+-- 17. Safe foreign-key PRAGMA
+PRAGMA foreign_key_list(orders);
+
+
+-- 18. Database integrity check
+PRAGMA quick_check;

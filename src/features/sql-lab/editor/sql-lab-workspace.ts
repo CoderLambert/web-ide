@@ -1,6 +1,33 @@
 import type { WorkspaceEntry, WorkspaceFileSystem } from "@/workspace/file-system";
 import type { WorkspacePath } from "@/workspace/path";
 
+export function scheduleDirectoryLoad<T>(
+  loads: Map<string, Promise<T>>,
+  path: string,
+  force: boolean,
+  load: () => Promise<T>,
+): Promise<T> {
+  const existing = loads.get(path);
+  if (!force && existing !== undefined) {
+    return existing;
+  }
+
+  const task = (async () => {
+    if (existing !== undefined) {
+      await existing.catch(() => undefined);
+    }
+    return load();
+  })();
+  let trackedTask!: Promise<T>;
+  trackedTask = task.finally(() => {
+    if (loads.get(path) === trackedTask) {
+      loads.delete(path);
+    }
+  });
+  loads.set(path, trackedTask);
+  return trackedTask;
+}
+
 export async function listSqlDirectory(
   fileSystem: Pick<WorkspaceFileSystem, "list">,
   path: WorkspacePath,
