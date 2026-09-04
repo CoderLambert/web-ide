@@ -21,6 +21,7 @@ describe("local workspace session bootstrap middleware", () => {
     expect(state.headers).toEqual({
       "cache-control": "no-store",
       "set-cookie": "web_ide_workspace_token=server-secret; Path=/; HttpOnly; SameSite=Strict",
+      "x-web-ide-workspace-id": "workspace-1",
     });
     expect(state.ended).toBe(true);
   });
@@ -42,15 +43,19 @@ describe("local workspace session bootstrap middleware", () => {
       remoteAddress: "192.0.2.10",
       forwardedFor: "127.0.0.1",
     },
+    { name: "origin has a mismatched port", origin: "http://localhost:4000" },
+    { name: "origin is foreign", origin: "http://example.test" },
+    { name: "origin is null", origin: "null" },
   ])(
     "passes through when $name",
-    ({ host, method, overrides, remoteAddress, url, forwardedFor }) => {
+    ({ host, method, overrides, remoteAddress, url, forwardedFor, origin }) => {
       const { request, response, state } = testContext({
         host,
         method,
         remoteAddress,
         url,
         forwardedFor,
+        origin,
       });
 
       createLocalWorkspaceSessionBootstrapMiddleware({ ...configuration, ...overrides })(
@@ -64,6 +69,27 @@ describe("local workspace session bootstrap middleware", () => {
       expect(state.headers).toEqual({});
     },
   );
+
+  it("passes through when the request already has the valid cookie", () => {
+    const { request, response, state } = testContext({
+      cookie: "web_ide_workspace_token=server-secret",
+    });
+
+    createLocalWorkspaceSessionBootstrapMiddleware(configuration)(request, response, state.next);
+
+    expect(state.nextCalls).toBe(1);
+    expect(state.ended).toBe(false);
+    expect(state.headers).toEqual({});
+  });
+
+  it("accepts a same-origin request", () => {
+    const { request, response, state } = testContext({ origin: "http://localhost:3000" });
+
+    createLocalWorkspaceSessionBootstrapMiddleware(configuration)(request, response, state.next);
+
+    expect(state.statusCode).toBe(204);
+    expect(state.headers["x-web-ide-workspace-id"]).toBe("workspace-1");
+  });
 
   it.each(["localhost", "localhost:3000", "127.0.0.1", "127.0.0.1:3000", "[::1]", "[::1]:3000"])(
     "accepts local host %s",
@@ -95,8 +121,10 @@ function testContext(
     forwardedFor?: string;
     host?: string;
     method?: string;
+    origin?: string;
     remoteAddress?: string;
     url?: string;
+    cookie?: string;
   } = {},
 ) {
   const state = {
@@ -112,6 +140,8 @@ function testContext(
     headers: {
       host: options.host ?? "localhost:3000",
       ...(options.forwardedFor === undefined ? {} : { "x-forwarded-for": options.forwardedFor }),
+      ...(options.origin === undefined ? {} : { origin: options.origin }),
+      ...(options.cookie === undefined ? {} : { cookie: options.cookie }),
     },
     method: options.method ?? "POST",
     socket: { remoteAddress: options.remoteAddress ?? "127.0.0.1" },

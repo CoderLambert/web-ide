@@ -22,6 +22,7 @@ describe("Workspace session route", () => {
 
     expect(response.status).toBe(204);
     expect(response.headers.get("set-cookie")).toBeNull();
+    expect(response.headers.get("x-web-ide-workspace-id")).toBe("workspace-1");
     expect(await response.text()).toBe("");
   });
 
@@ -37,6 +38,7 @@ describe("Workspace session route", () => {
 
     expect(response.status).toBe(403);
     expect(response.headers.get("set-cookie")).toBeNull();
+    expect(response.headers.get("x-web-ide-workspace-id")).toBeNull();
     expect(await response.text()).not.toContain("server-secret");
   });
 
@@ -58,6 +60,7 @@ describe("Workspace session route", () => {
 
     expect(response.status).toBe(403);
     expect(response.headers.get("set-cookie")).toBeNull();
+    expect(response.headers.get("x-web-ide-workspace-id")).toBeNull();
   });
 
   it("only allows POST", () => {

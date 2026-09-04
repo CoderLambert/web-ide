@@ -5,6 +5,8 @@ export interface WorkspaceSessionConfiguration {
   token?: string;
 }
 
+const WORKSPACE_ID_HEADER = "X-Web-Ide-Workspace-Id";
+
 export function handleConfiguredWorkspaceSessionRequest(request: Request): Response {
   return handleWorkspaceSessionRequestWithConfiguration(request, {
     workspaceId: process.env.WEB_IDE_WORKSPACE_ID,
@@ -30,7 +32,10 @@ export function handleWorkspaceSessionRequestWithConfiguration(
   ) {
     return new Response(null, {
       status: 204,
-      headers: { "cache-control": "no-store" },
+      headers: {
+        "cache-control": "no-store",
+        [WORKSPACE_ID_HEADER]: configuration.workspaceId,
+      },
     });
   }
 

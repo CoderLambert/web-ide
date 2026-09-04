@@ -8,8 +8,6 @@ import { SqlResults } from "@/features/sql-lab/results/sql-results";
 import { SchemaExplorer } from "@/features/sql-lab/schema/schema-explorer";
 import type { SqlExecutionReport, SqlLabError, SqlSchema } from "@/sql-lab/contract";
 
-const SQL_LAB_WORKSPACE_ID = import.meta.env.VITE_WEB_IDE_WORKSPACE_ID ?? "web-ide";
-
 export function SqlLabPage() {
   const clientRef = useRef<SqlLabClient | undefined>(undefined);
   const requestNumberRef = useRef(0);
@@ -23,12 +21,19 @@ export function SqlLabPage() {
     "bootstrapping" | "ready" | "error"
   >("bootstrapping");
   const [initializationError, setInitializationError] = useState("");
-  clientRef.current ??= new SqlLabClient({ workspaceId: SQL_LAB_WORKSPACE_ID });
+  const [workspaceId, setWorkspaceId] = useState<string>();
 
   useEffect(() => {
     let cancelled = false;
     void bootstrapWorkspaceSession()
-      .then(() => refreshSchema())
+      .then((nextWorkspaceId) => {
+        if (cancelled) {
+          return;
+        }
+        clientRef.current = new SqlLabClient({ workspaceId: nextWorkspaceId });
+        setWorkspaceId(nextWorkspaceId);
+        return refreshSchema();
+      })
       .then(() => {
         if (!cancelled) {
           setInitializationState("ready");
@@ -244,6 +249,17 @@ export function SqlLabPage() {
     );
   }
 
+  if (workspaceId === undefined) {
+    return (
+      <main data-testid="sql-lab-initialization">
+        <p data-testid="sql-lab-state">error</p>
+        <p aria-live="polite" data-testid="sql-lab-session-error">
+          Workspace session bootstrap failed.
+        </p>
+      </main>
+    );
+  }
+
   return (
     <main>
       <SqlLabEditor
@@ -251,7 +267,7 @@ export function SqlLabPage() {
         onReset={reset}
         onRun={run}
         operationActive={active}
-        workspaceId={SQL_LAB_WORKSPACE_ID}
+        workspaceId={workspaceId}
       />
       <SqlResults error={error} loading={active} report={report} />
       <SchemaExplorer
