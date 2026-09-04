@@ -3,10 +3,16 @@ import { join } from "node:path";
 
 import { expect, test, type APIRequestContext, type Page } from "playwright/test";
 
+import { resolveWorkspaceSessionCookieName } from "../../src/server/workspace/session-cookie";
+
 const baseUrl = requiredEnvironment("S0_BASE_URL").replace(/\/$/, "");
 const workspaceId = requiredEnvironment("SQL_LAB_WORKSPACE_ID");
 const workspaceRoot = requiredEnvironment("SQL_LAB_WORKSPACE_ROOT");
 const workspaceToken = requiredEnvironment("SQL_LAB_WORKSPACE_TOKEN");
+const localCookieName = resolveWorkspaceSessionCookieName({
+  enabled: "1",
+  host: new URL(baseUrl).host,
+});
 
 function requiredEnvironment(name: string): string {
   const value = process.env[name];
@@ -23,7 +29,7 @@ async function postSqlLab(
   const response = await request.post("/api/sql-lab", {
     headers: {
       "content-type": "application/json",
-      cookie: `web_ide_workspace_token=${workspaceToken}`,
+      cookie: `${localCookieName}=${workspaceToken}`,
     },
     data: payload,
   });
@@ -54,12 +60,21 @@ async function expectCompleted(page: Page): Promise<void> {
 test("proves the production SQL Lab API and browser flow", async ({ page, request }) => {
   const consoleErrors: string[] = [];
   const pageErrors: string[] = [];
+  const workspaceListPaths: string[] = [];
   page.on("console", (message) => {
     if (message.type() === "error") {
       consoleErrors.push(message.text());
     }
   });
   page.on("pageerror", (error) => pageErrors.push(error.message));
+  page.on("request", (request) => {
+    if (request.url().endsWith("/api/workspace") && request.method() === "POST") {
+      const payload = request.postDataJSON() as { operation?: unknown; path?: unknown };
+      if (payload.operation === "list" && typeof payload.path === "string") {
+        workspaceListPaths.push(payload.path);
+      }
+    }
+  });
 
   const reset = await postSqlLab(request, { operation: "reset", workspaceId });
   expect(reset.response.status()).toBe(200);
@@ -183,26 +198,35 @@ test("proves the production SQL Lab API and browser flow", async ({ page, reques
   expect(extraField.response.status()).toBe(400);
 
   expect(
-    (await page.context().cookies(baseUrl)).some(
-      (cookie) => cookie.name === "web_ide_workspace_token",
-    ),
+    (await page.context().cookies(baseUrl)).some((cookie) => cookie.name === localCookieName),
   ).toBe(false);
   const bootstrap = await request.post("/api/workspace/session");
   expect(bootstrap.status()).toBe(204);
   expect(await bootstrap.text()).toBe("");
 
   await openSqlLab(page);
+  expect(workspaceListPaths).toEqual([""]);
   const sessionCookie = (await page.context().cookies(baseUrl)).find(
-    (cookie) => cookie.name === "web_ide_workspace_token",
+    (cookie) => cookie.name === localCookieName,
   );
   expect(sessionCookie).toMatchObject({
     httpOnly: true,
-    name: "web_ide_workspace_token",
+    name: localCookieName,
     path: "/",
     sameSite: "Strict",
   });
   await expect(page.locator('[data-testid="sql-lab-editor"] .monaco-editor')).toHaveCount(1);
   await expect(page.locator('[data-testid="sql-lab-schema"]')).toContainText("customers");
+
+  const sourceDirectory = page.getByRole("button", { name: "src", exact: true });
+  await sourceDirectory.click();
+  await expect(page.getByRole("button", { name: "src/query.sql", exact: true })).toBeVisible();
+  expect(workspaceListPaths).toEqual(["", "src"]);
+  await sourceDirectory.click();
+  await sourceDirectory.click();
+  await expect(page.getByRole("button", { name: "src/query.sql", exact: true })).toBeVisible();
+  expect(workspaceListPaths).toEqual(["", "src"]);
+  await page.getByRole("button", { name: "src/query.sql", exact: true }).click();
 
   await replaceEditorContent(page, "SELECT 41 AS answer;");
   await expect(page.locator('[data-testid="sql-lab-save"]')).toBeEnabled();
@@ -230,12 +254,13 @@ test("proves the production SQL Lab API and browser flow", async ({ page, reques
   );
 
   await page.locator('[data-testid="sql-lab-new"]').click();
-  const newFile = page.getByRole("button", { name: "query-1.sql", exact: true });
+  const newFile = page.getByRole("button", { name: "query.sql", exact: true });
   await expect(newFile).toBeVisible();
+  expect(workspaceListPaths).toEqual(["", "src", ""]);
   await replaceEditorContent(page, "SELECT 7 AS new_file;");
   await page.locator('[data-testid="sql-lab-save"]').click();
   await expect(page.locator('[data-testid="sql-lab-save"]')).toBeDisabled();
-  await expect(readFile(join(workspaceRoot, "query-1.sql"), "utf8")).resolves.toBe(
+  await expect(readFile(join(workspaceRoot, "query.sql"), "utf8")).resolves.toBe(
     "SELECT 7 AS new_file;",
   );
 

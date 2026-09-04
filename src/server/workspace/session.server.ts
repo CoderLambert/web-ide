@@ -1,8 +1,10 @@
 import { isConfiguredValue } from "../configuration";
+import { readCookie, resolveWorkspaceSessionCookieName } from "./session-cookie";
 
 export interface WorkspaceSessionConfiguration {
   workspaceId?: string;
   token?: string;
+  enabled?: string;
 }
 
 const WORKSPACE_ID_HEADER = "X-Web-Ide-Workspace-Id";
@@ -11,6 +13,7 @@ export function handleConfiguredWorkspaceSessionRequest(request: Request): Respo
   return handleWorkspaceSessionRequestWithConfiguration(request, {
     workspaceId: process.env.WEB_IDE_WORKSPACE_ID,
     token: process.env.WEB_IDE_WORKSPACE_TOKEN,
+    enabled: process.env.WEB_IDE_LOCAL_SESSION_BOOTSTRAP,
   });
 }
 
@@ -28,7 +31,13 @@ export function handleWorkspaceSessionRequestWithConfiguration(
   if (
     isConfiguredValue(configuration.workspaceId) &&
     isConfiguredValue(configuration.token) &&
-    readCookie(request.headers.get("cookie"), "web_ide_workspace_token") === configuration.token
+    readCookie(
+      request.headers.get("cookie"),
+      resolveWorkspaceSessionCookieName({
+        enabled: configuration.enabled,
+        host: request.headers.get("host") ?? undefined,
+      }),
+    ) === configuration.token
   ) {
     return new Response(null, {
       status: 204,
@@ -47,17 +56,4 @@ function forbiddenResponse(): Response {
     { ok: false, error: { code: "FORBIDDEN", message: "Workspace access denied." } },
     { status: 403, headers: { "cache-control": "no-store" } },
   );
-}
-
-function readCookie(header: string | null, name: string): string | undefined {
-  if (header === null) {
-    return undefined;
-  }
-  for (const cookie of header.split(";")) {
-    const separator = cookie.indexOf("=");
-    if (separator !== -1 && cookie.slice(0, separator).trim() === name) {
-      return cookie.slice(separator + 1).trim();
-    }
-  }
-  return undefined;
 }

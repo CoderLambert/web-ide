@@ -1,6 +1,7 @@
 import type { Connect } from "vite";
 
 import { isConfiguredValue } from "../configuration";
+import { isLocalHost, readCookie, resolveWorkspaceSessionCookieName } from "./session-cookie";
 
 export interface LocalWorkspaceSessionConfiguration {
   workspaceId?: string;
@@ -35,7 +36,8 @@ export function createLocalWorkspaceSessionBootstrapMiddleware(
       return;
     }
 
-    if (!isLocalHost(request.headers.host)) {
+    const host = request.headers.host;
+    if (!isLocalHost(host)) {
       next();
       return;
     }
@@ -45,7 +47,11 @@ export function createLocalWorkspaceSessionBootstrapMiddleware(
       return;
     }
 
-    if (readCookie(request.headers.cookie, "web_ide_workspace_token") === configuration.token) {
+    const cookieName = resolveWorkspaceSessionCookieName({
+      enabled: configuration.enabled,
+      host,
+    });
+    if (readCookie(request.headers.cookie, cookieName) === configuration.token) {
       next();
       return;
     }
@@ -55,12 +61,7 @@ export function createLocalWorkspaceSessionBootstrapMiddleware(
     response.setHeader(WORKSPACE_ID_HEADER, configuration.workspaceId);
     response.setHeader(
       "Set-Cookie",
-      [
-        `web_ide_workspace_token=${configuration.token}`,
-        "Path=/",
-        "HttpOnly",
-        "SameSite=Strict",
-      ].join("; "),
+      [`${cookieName}=${configuration.token}`, "Path=/", "HttpOnly", "SameSite=Strict"].join("; "),
     );
     response.end();
   };
@@ -68,23 +69,6 @@ export function createLocalWorkspaceSessionBootstrapMiddleware(
 
 function isLoopbackAddress(address: string | undefined): boolean {
   return address === "127.0.0.1" || address === "::1" || address === "::ffff:127.0.0.1";
-}
-
-function isLocalHost(host: string | undefined): boolean {
-  if (host === undefined) {
-    return false;
-  }
-
-  const normalized = host.toLowerCase();
-
-  return (
-    normalized === "localhost" ||
-    normalized.startsWith("localhost:") ||
-    normalized === "127.0.0.1" ||
-    normalized.startsWith("127.0.0.1:") ||
-    normalized === "[::1]" ||
-    normalized.startsWith("[::1]:")
-  );
 }
 
 function hasAllowedOrigin(origin: string | undefined, host: string | undefined): boolean {
@@ -101,17 +85,4 @@ function hasAllowedOrigin(origin: string | undefined, host: string | undefined):
   } catch {
     return false;
   }
-}
-
-function readCookie(header: string | undefined, name: string): string | undefined {
-  if (header === undefined) {
-    return undefined;
-  }
-  for (const cookie of header.split(";")) {
-    const separator = cookie.indexOf("=");
-    if (separator !== -1 && cookie.slice(0, separator).trim() === name) {
-      return cookie.slice(separator + 1).trim();
-    }
-  }
-  return undefined;
 }

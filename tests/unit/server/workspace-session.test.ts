@@ -4,6 +4,7 @@ import {
   handleWorkspaceSessionRequestWithConfiguration,
   type WorkspaceSessionConfiguration,
 } from "../../../src/server/workspace/session.server";
+import { resolveWorkspaceSessionCookieName } from "../../../src/server/workspace/session-cookie";
 
 const configured: WorkspaceSessionConfiguration = {
   token: "server-secret",
@@ -40,6 +41,22 @@ describe("Workspace session route", () => {
     expect(response.headers.get("set-cookie")).toBeNull();
     expect(response.headers.get("x-web-ide-workspace-id")).toBeNull();
     expect(await response.text()).not.toContain("server-secret");
+  });
+
+  it("uses the local host namespace when local bootstrap is enabled", () => {
+    const cookieName = resolveWorkspaceSessionCookieName({
+      enabled: "1",
+      host: "localhost:3000",
+    });
+    const response = handleWorkspaceSessionRequestWithConfiguration(
+      new Request("http://localhost:3000/api/workspace/session", {
+        method: "POST",
+        headers: { cookie: `${cookieName}=server-secret`, host: "localhost:3000" },
+      }),
+      { ...configured, enabled: "1" },
+    );
+
+    expect(response.status).toBe(204);
   });
 
   it.each([

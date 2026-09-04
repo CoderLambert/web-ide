@@ -3,10 +3,16 @@ import { join } from "node:path";
 
 import { expect, test, type Page, type Response } from "playwright/test";
 
+import { resolveWorkspaceSessionCookieName } from "../../src/server/workspace/session-cookie";
+
 const baseUrl = (process.env.S0_BASE_URL ?? "http://127.0.0.1:3000").replace(/\/$/, "");
 const workspaceId = requiredEnvironment("M25_WORKSPACE_ID");
 const workspaceRoot = requiredEnvironment("M25_WORKSPACE_ROOT");
 const workspaceToken = requiredEnvironment("M25_WORKSPACE_TOKEN");
+const sessionCookieName = resolveWorkspaceSessionCookieName({
+  enabled: process.env.WEB_IDE_LOCAL_SESSION_BOOTSTRAP ?? "1",
+  host: new URL(baseUrl).host,
+});
 const workspacePath = "src/query.sql";
 const versionA = "SELECT '浏览器保存 A';\r\n-- exact content A\r\n";
 const versionB = "SELECT 'browser save B';\n-- ordered content B\n";
@@ -22,7 +28,7 @@ function requiredEnvironment(name: string): string {
 async function openProbe(page: Page): Promise<void> {
   await page.context().addCookies([
     {
-      name: "web_ide_workspace_token",
+      name: sessionCookieName,
       value: workspaceToken,
       url: baseUrl,
       httpOnly: true,

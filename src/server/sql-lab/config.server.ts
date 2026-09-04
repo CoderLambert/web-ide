@@ -3,12 +3,14 @@ import { assertDatabasePathOutsideWorkspace } from "@/server/sql-lab/database-pa
 import { SqlLabService } from "@/server/sql-lab/service";
 import type { SqlLabResponse } from "@/sql-lab/contract";
 import { isConfiguredValue } from "../configuration";
+import { readCookie, resolveWorkspaceSessionCookieName } from "../workspace/session-cookie";
 
 export interface ServerSqlLabConfiguration {
   workspaceId?: string;
   workspaceRoot?: string;
   token?: string;
   databasePath?: string;
+  enabled?: string;
 }
 
 let configuredHandler: ((request: Request) => Promise<Response>) | undefined;
@@ -19,6 +21,7 @@ export function handleConfiguredSqlLabApiRequest(request: Request): Promise<Resp
     workspaceRoot: process.env.WEB_IDE_WORKSPACE_ROOT,
     token: process.env.WEB_IDE_WORKSPACE_TOKEN,
     databasePath: process.env.WEB_IDE_SQL_LAB_DATABASE_PATH,
+    enabled: process.env.WEB_IDE_LOCAL_SESSION_BOOTSTRAP,
   });
   return configuredHandler(request);
 }
@@ -31,7 +34,13 @@ export function createSqlLabApiHandler(
     handleSqlLabApiRequest(request, {
       service,
       authorize(workspaceId) {
-        const token = readCookie(request.headers.get("cookie"), "web_ide_workspace_token");
+        const token = readCookie(
+          request.headers.get("cookie"),
+          resolveWorkspaceSessionCookieName({
+            enabled: configuration.enabled,
+            host: request.headers.get("host") ?? undefined,
+          }),
+        );
         if (
           !isConfiguredValue(configuration.workspaceId) ||
           !isConfiguredValue(configuration.token) ||
@@ -72,17 +81,4 @@ class SqlLabApiAuthorizationError extends Error {
   constructor() {
     super("SQL Lab access denied.");
   }
-}
-
-function readCookie(header: string | null, name: string): string | undefined {
-  if (header === null) {
-    return undefined;
-  }
-  for (const cookie of header.split(";")) {
-    const separator = cookie.indexOf("=");
-    if (separator !== -1 && cookie.slice(0, separator).trim() === name) {
-      return cookie.slice(separator + 1).trim();
-    }
-  }
-  return undefined;
 }

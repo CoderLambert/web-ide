@@ -1,11 +1,13 @@
 import { WorkspaceFileSystemError } from "../../workspace/file-system";
 import { isConfiguredValue } from "../configuration";
 import { handleWorkspaceApiRequest } from "./api";
+import { readCookie, resolveWorkspaceSessionCookieName } from "./session-cookie";
 
 export interface ServerWorkspaceConfiguration {
   workspaceId?: string;
   root?: string;
   token?: string;
+  enabled?: string;
 }
 
 export function handleConfiguredWorkspaceApiRequest(request: Request): Promise<Response> {
@@ -13,6 +15,7 @@ export function handleConfiguredWorkspaceApiRequest(request: Request): Promise<R
     workspaceId: process.env.WEB_IDE_WORKSPACE_ID,
     root: process.env.WEB_IDE_WORKSPACE_ROOT,
     token: process.env.WEB_IDE_WORKSPACE_TOKEN,
+    enabled: process.env.WEB_IDE_LOCAL_SESSION_BOOTSTRAP,
   });
 }
 
@@ -20,7 +23,13 @@ export function handleWorkspaceApiRequestWithConfiguration(
   request: Request,
   configuration: ServerWorkspaceConfiguration,
 ): Promise<Response> {
-  const workspaceToken = readCookie(request.headers.get("cookie"), "web_ide_workspace_token");
+  const workspaceToken = readCookie(
+    request.headers.get("cookie"),
+    resolveWorkspaceSessionCookieName({
+      enabled: configuration.enabled,
+      host: request.headers.get("host") ?? undefined,
+    }),
+  );
   return handleWorkspaceApiRequest(request, {
     authorizer: {
       async authorize(workspaceId) {
@@ -43,17 +52,4 @@ export function handleWorkspaceApiRequestWithConfiguration(
       },
     },
   });
-}
-
-function readCookie(header: string | null, name: string): string | undefined {
-  if (header === null) {
-    return undefined;
-  }
-  for (const cookie of header.split(";")) {
-    const separator = cookie.indexOf("=");
-    if (separator !== -1 && cookie.slice(0, separator).trim() === name) {
-      return cookie.slice(separator + 1).trim();
-    }
-  }
-  return undefined;
 }

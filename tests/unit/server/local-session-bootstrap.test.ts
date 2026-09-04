@@ -3,12 +3,17 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import { describe, expect, it } from "vite-plus/test";
 
 import { createLocalWorkspaceSessionBootstrapMiddleware } from "../../../src/server/workspace/local-session-bootstrap";
+import { resolveWorkspaceSessionCookieName } from "../../../src/server/workspace/session-cookie";
 
 const configuration = {
   enabled: "1",
   token: "server-secret",
   workspaceId: "workspace-1",
 };
+const localCookieName = resolveWorkspaceSessionCookieName({
+  enabled: "1",
+  host: "localhost:3000",
+});
 
 describe("local workspace session bootstrap middleware", () => {
   it("bootstraps a local loopback request with an HttpOnly cookie", () => {
@@ -20,7 +25,7 @@ describe("local workspace session bootstrap middleware", () => {
     expect(state.statusCode).toBe(204);
     expect(state.headers).toEqual({
       "cache-control": "no-store",
-      "set-cookie": "web_ide_workspace_token=server-secret; Path=/; HttpOnly; SameSite=Strict",
+      "set-cookie": `${localCookieName}=server-secret; Path=/; HttpOnly; SameSite=Strict`,
       "x-web-ide-workspace-id": "workspace-1",
     });
     expect(state.ended).toBe(true);
@@ -72,7 +77,7 @@ describe("local workspace session bootstrap middleware", () => {
 
   it("passes through when the request already has the valid cookie", () => {
     const { request, response, state } = testContext({
-      cookie: "web_ide_workspace_token=server-secret",
+      cookie: `${localCookieName}=server-secret`,
     });
 
     createLocalWorkspaceSessionBootstrapMiddleware(configuration)(request, response, state.next);

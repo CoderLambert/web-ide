@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { afterEach, beforeEach, describe, expect, it } from "vite-plus/test";
 
 import { handleWorkspaceApiRequestWithConfiguration } from "../../../src/server/workspace/api.server";
+import { resolveWorkspaceSessionCookieName } from "../../../src/server/workspace/session-cookie";
 
 let workspaceRoot: string;
 
@@ -59,19 +60,40 @@ describe("Workspace server configuration", () => {
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toMatchObject({ ok: true, result: [] });
   });
+
+  it("uses the local host namespace for workspace authorization", async () => {
+    const cookieName = resolveWorkspaceSessionCookieName({
+      enabled: "1",
+      host: "localhost:3000",
+    });
+    const response = await requestFor({
+      workspaceId: "workspace-1",
+      token: "token-1",
+      root: workspaceRoot,
+      enabled: "1",
+      cookie: `${cookieName}=token-1`,
+      host: "localhost:3000",
+    });
+
+    expect(response.status).toBe(200);
+  });
 });
 
 async function requestFor(configuration: {
   workspaceId?: string;
   token?: string;
   root?: string;
+  enabled?: string;
+  cookie?: string;
+  host?: string;
 }): Promise<Response> {
   return handleWorkspaceApiRequestWithConfiguration(
     new Request("http://localhost/api/workspace", {
       method: "POST",
       headers: {
         "content-type": "application/json",
-        cookie: "web_ide_workspace_token=token-1",
+        cookie: configuration.cookie ?? "web_ide_workspace_token=token-1",
+        host: configuration.host ?? "localhost",
       },
       body: JSON.stringify({ workspaceId: "workspace-1", operation: "list", path: "" }),
     }),

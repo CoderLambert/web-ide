@@ -11,6 +11,15 @@ function requiredEnvironment(name: string): string {
 }
 
 test("opens SQL Lab with clean local runtime defaults", async ({ page }) => {
+  const workspaceListPaths: string[] = [];
+  page.on("request", (request) => {
+    if (request.url().endsWith("/api/workspace") && request.method() === "POST") {
+      const payload = request.postDataJSON() as { operation?: unknown; path?: unknown };
+      if (payload.operation === "list" && typeof payload.path === "string") {
+        workspaceListPaths.push(payload.path);
+      }
+    }
+  });
   const schemaResponse = page.waitForResponse(
     (response) => response.url().endsWith("/api/sql-lab") && response.request().method() === "POST",
   );
@@ -19,13 +28,13 @@ test("opens SQL Lab with clean local runtime defaults", async ({ page }) => {
   await expect(page.locator('[data-testid="sql-lab-state"]')).toHaveText("ready", {
     timeout: 30_000,
   });
+  expect(workspaceListPaths).toEqual([""]);
 
-  const sessionCookie = (await page.context().cookies(baseUrl)).find(
-    (cookie) => cookie.name === "web_ide_workspace_token",
+  const sessionCookie = (await page.context().cookies(baseUrl)).find((cookie) =>
+    /^web_ide_workspace_token_[a-f0-9]{16}$/.test(cookie.name),
   );
   expect(sessionCookie).toMatchObject({
     httpOnly: true,
-    name: "web_ide_workspace_token",
     path: "/",
     sameSite: "Strict",
   });

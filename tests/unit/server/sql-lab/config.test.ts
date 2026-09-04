@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { describe, expect, it } from "vite-plus/test";
 
 import { createSqlLabApiHandler } from "@/server/sql-lab/config.server";
+import { resolveWorkspaceSessionCookieName } from "@/server/workspace/session-cookie";
 
 async function requestFor(handler: (request: Request) => Promise<Response>): Promise<Response> {
   return handler(
@@ -14,6 +15,7 @@ async function requestFor(handler: (request: Request) => Promise<Response>): Pro
       headers: {
         "content-type": "application/json",
         cookie: "web_ide_workspace_token=token-1",
+        host: "localhost",
       },
     }),
   );
@@ -63,6 +65,42 @@ describe("SQL Lab server configuration", () => {
       );
 
       expect(response.status).toBe(405);
+    } finally {
+      await Promise.all([
+        rm(workspaceRoot, { recursive: true, force: true }),
+        rm(databaseRoot, { recursive: true, force: true }),
+      ]);
+    }
+  });
+
+  it("uses the local host namespace for SQL Lab authorization", async () => {
+    const workspaceRoot = await mkdtemp(join(tmpdir(), "web-ide-sql-local-config-workspace-"));
+    const databaseRoot = await mkdtemp(join(tmpdir(), "web-ide-sql-local-config-database-"));
+    try {
+      const handler = createSqlLabApiHandler({
+        workspaceId: "workspace-1",
+        token: "token-1",
+        enabled: "1",
+        databasePath: join(databaseRoot, "sql-lab.sqlite"),
+        workspaceRoot,
+      });
+      const cookieName = resolveWorkspaceSessionCookieName({
+        enabled: "1",
+        host: "localhost:3000",
+      });
+      const response = await handler(
+        new Request("http://localhost:3000/api/sql-lab", {
+          method: "POST",
+          body: JSON.stringify({ operation: "schema", workspaceId: "workspace-1" }),
+          headers: {
+            "content-type": "application/json",
+            cookie: `${cookieName}=token-1`,
+            host: "localhost:3000",
+          },
+        }),
+      );
+
+      expect(response.status).toBe(200);
     } finally {
       await Promise.all([
         rm(workspaceRoot, { recursive: true, force: true }),

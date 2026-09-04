@@ -145,6 +145,17 @@ async function runLocalRuntimeSmoke(baseUrl, environment) {
   });
 }
 
+async function runLocalMultiInstanceSmoke(instanceA, instanceB, environment) {
+  await run("pnpm", ["exec", "playwright", "test", "tests/sql-lab/local-multi-instance.spec.ts"], {
+    env: {
+      ...environment,
+      S0_BASE_URL: instanceA,
+      LOCAL_INSTANCE_A_URL: instanceA,
+      LOCAL_INSTANCE_B_URL: instanceB,
+    },
+  });
+}
+
 async function assertProductionFailClosed(url, environment) {
   const request = (cookie) =>
     fetch(`${url}/api/workspace/session`, {
@@ -223,6 +234,32 @@ try {
   await stopPreview(preview);
   preview = undefined;
   console.log("SQLL-LOCAL clean build+preview smoke PASS");
+
+  const multiDevPort = await freePort();
+  const multiPreviewPort = await freePort();
+  const multiDevUrl = `http://${previewHost}:${multiDevPort}`;
+  const multiPreviewUrl = `http://${previewHost}:${multiPreviewPort}`;
+  let multiDev;
+  let multiPreview;
+  try {
+    multiDev = startServer(
+      ["dev", "--host", previewHost, "--port", String(multiDevPort)],
+      cleanEnvironment,
+    );
+    multiPreview = startServer(
+      ["preview", "--host", previewHost, "--port", String(multiPreviewPort)],
+      cleanEnvironment,
+    );
+    await Promise.all([
+      waitForServer(multiDevUrl, multiDev, "multi-instance dev server"),
+      waitForServer(multiPreviewUrl, multiPreview, "multi-instance preview server"),
+    ]);
+    await runLocalMultiInstanceSmoke(multiDevUrl, multiPreviewUrl, cleanEnvironment);
+  } finally {
+    await stopPreview(multiDev);
+    await stopPreview(multiPreview);
+  }
+  console.log("SQLL-LOCAL multi-instance cookie isolation PASS");
 
   const failClosedEnvironment = { ...gateEnvironment, WEB_IDE_LOCAL_SESSION_BOOTSTRAP: "0" };
   preview = startServer(
