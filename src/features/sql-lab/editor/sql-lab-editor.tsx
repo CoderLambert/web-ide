@@ -116,10 +116,10 @@ export function SqlLabEditor({
           return;
         }
         setFiles(listed);
-        setState("ready");
         if (listed[0] !== undefined) {
           await openFile(listed[0]);
         }
+        setState("ready");
       })
       .catch((initializationError: unknown) => {
         if (!cancelled) {

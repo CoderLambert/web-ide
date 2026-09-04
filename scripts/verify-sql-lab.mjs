@@ -125,10 +125,11 @@ try {
     ["exec", "playwright", "test", "tests/s0", "tests/m1", "tests/m2/syntax-capabilities.spec.ts"],
     { env: playwrightEnvironment },
   );
-  await run("pnpm", ["exec", "playwright", "test", "tests/sql-lab"], {
+  await run("pnpm", ["exec", "playwright", "test", "tests/m25"], {
     env: playwrightEnvironment,
   });
-  await run("pnpm", ["exec", "playwright", "test", "tests/m25"], {
+  await writeFile(join(workspaceRoot, "src", "query.sql"), "SELECT 'initial';\n", "utf8");
+  await run("pnpm", ["exec", "playwright", "test", "tests/sql-lab"], {
     env: playwrightEnvironment,
   });
   console.log("SQLL-08 production build/preview/API/browser gate PASS");

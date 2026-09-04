@@ -92,4 +92,31 @@ describe("Tree-sitter selection mapping", () => {
       expect(outer === undefined ? true : sameRange(inner, outer)).toBe(false);
     }
   });
+
+  it("resolves the statement when the cursor is at the end of the document", () => {
+    const program = {
+      parent: null,
+      namedDescendantForPosition: ({ column }: { column: number }) =>
+        column >= 19 ? (program as unknown as Node) : identifier,
+    } as unknown as Node;
+    const statement = fakeNode(0, 22, program, {} as Node);
+    const select = fakeNode(0, 11, statement, {} as Node);
+    const expression = fakeNode(7, 11, select, {} as Node);
+    const term = fakeNode(7, 11, expression, {} as Node);
+    const field = fakeNode(7, 11, term, {} as Node);
+    const identifier = fakeNode(7, 11, field, {} as Node);
+    const session: DocumentSession = {
+      documentUri: "opaque://query.sql",
+      sessionId: "session-1",
+      documentVersion: 1,
+      languageId: "sql",
+      textMirror: "SELECT name FROM users;",
+      tree: { rootNode: program } as unknown as Tree,
+      state: "ready",
+    };
+
+    expect(collectSelectionPath(session, { line: 0, character: 22 })).toEqual({
+      ranges: expectedRanges,
+    });
+  });
 });

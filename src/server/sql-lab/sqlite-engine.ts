@@ -12,9 +12,9 @@ import type {
   SqlStatementResult,
   SqlTableSchema,
   SqlValue,
-} from "@/sql-lab/contract";
-import { SQL_LAB_LIMITS } from "@/server/sql-lab/limits";
-import { createSqliteAuthorizer } from "@/server/sql-lab/security";
+} from "#/sql-lab/contract.ts";
+import { SQL_LAB_LIMITS } from "#/server/sql-lab/limits.ts";
+import { createSqliteAuthorizer } from "#/server/sql-lab/security.ts";
 
 type SqliteRow = unknown[];
 

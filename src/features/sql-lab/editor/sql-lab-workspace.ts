@@ -20,7 +20,7 @@ export async function listSqlFiles(
 }
 
 export function nextSqlFileName(paths: readonly WorkspacePath[]): WorkspacePath {
-  const used = new Set(paths);
+  const used = new Set(paths.map((path) => path.slice(path.lastIndexOf("/") + 1)));
   const base = "query.sql";
   if (!used.has(base)) {
     return base;

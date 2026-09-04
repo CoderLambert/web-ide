@@ -49,16 +49,21 @@ export function textPositionToTreeSitterPoint(text: string, position: TextPositi
   };
 }
 
-function isRootNode(node: Node): boolean {
-  return node.parent === null;
+function isRootNode(node: Node | null): boolean {
+  return node !== null && node.parent === null;
 }
 
 export function collectSelectionPath(
   session: DocumentSession,
   position: TextPosition,
 ): SyntaxSelectionPath {
-  const point = textPositionToTreeSitterPoint(session.textMirror, position);
-  let node = session.tree.rootNode.namedDescendantForPosition(point);
+  let point = textPositionToTreeSitterPoint(session.textMirror, position);
+  const rootNode = session.tree.rootNode;
+  let node = rootNode.namedDescendantForPosition(point);
+  while (isRootNode(node) && point.column > 0) {
+    point = { row: point.row, column: point.column - 1 };
+    node = rootNode.namedDescendantForPosition(point);
+  }
   const ranges = [];
 
   while (node !== null && !isRootNode(node)) {

@@ -2,9 +2,9 @@ import { randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, renameSync, unlinkSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 
-import type { SqlSchema } from "@/sql-lab/contract";
-import { DEMO_SEED_SQL } from "@/sql-lab/demo-seed";
-import { SqliteEngine, SqliteEngineError } from "@/server/sql-lab/sqlite-engine";
+import type { SqlSchema } from "#/sql-lab/contract.ts";
+import { DEMO_SEED_SQL } from "#/sql-lab/demo-seed.ts";
+import { SqliteEngine, SqliteEngineError } from "#/server/sql-lab/sqlite-engine.ts";
 
 export function resetSqliteDatabase(databasePath: string): SqlSchema {
   if (databasePath.trim() === "") {

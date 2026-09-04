@@ -1,4 +1,5 @@
-import { Worker } from "node:worker_threads";
+import { fork } from "node:child_process";
+import { fileURLToPath } from "node:url";
 
 import type {
   SqlLabWorkerRequest,
@@ -10,15 +11,24 @@ export interface SqlLabExecutionHost {
   run(request: SqlLabWorkerRequest): Promise<SqlLabWorkerResponse>;
 }
 
-export class SqlLabWorkerExecutionHost implements SqlLabExecutionHost {
+export class SqlLabChildProcessExecutionHost implements SqlLabExecutionHost {
   async run(request: SqlLabWorkerRequest): Promise<SqlLabWorkerResponse> {
-    const workerUrl = await resolveWorkerEntry();
+    const childPath = await resolveChildEntry();
     return new Promise((resolve, reject) => {
-      const worker = new Worker(workerUrl, { workerData: request });
+      const child = fork(childPath, [], {
+        env: {
+          ...process.env,
+          WEB_IDE_SQL_LAB_CHILD: "1",
+        },
+        execArgv: process.execArgv.includes("--experimental-strip-types")
+          ? process.execArgv
+          : [...process.execArgv, "--experimental-strip-types"],
+        stdio: ["ignore", "ignore", "ignore", "ipc"],
+      });
       let settled = false;
       let timeoutId: NodeJS.Timeout | undefined;
       let response: SqlLabWorkerResponse | undefined;
-      let workerError: Error | undefined;
+      let childError: Error | undefined;
       let timedOut = false;
       let terminationRequested = false;
 
@@ -33,21 +43,21 @@ export class SqlLabWorkerExecutionHost implements SqlLabExecutionHost {
         callback();
       };
 
-      const handleExit = (code: number): void => {
+      const handleExit = (code: number | null, signal: NodeJS.Signals | null): void => {
         if (timedOut) {
           settle(() => resolve(timeoutResponse(request)));
           return;
         }
-        if (workerError !== undefined) {
-          settle(() => reject(workerError));
+        if (childError !== undefined) {
+          settle(() => reject(childError));
           return;
         }
-        if (code !== 0) {
-          settle(() => reject(new Error(`SQL Lab worker exited with code ${code}.`)));
+        if (code !== 0 || signal !== null) {
+          settle(() => reject(new Error(`SQL Lab child exited with code ${code ?? signal}.`)));
           return;
         }
         if (response === undefined) {
-          settle(() => reject(new Error("SQL Lab worker exited without a response.")));
+          settle(() => reject(new Error("SQL Lab child exited without a response.")));
           return;
         }
         const completedResponse = response;
@@ -59,19 +69,12 @@ export class SqlLabWorkerExecutionHost implements SqlLabExecutionHost {
           return;
         }
         terminationRequested = true;
-        void worker
-          .terminate()
-          .then((code) => handleExit(code))
-          .catch((error: unknown) => {
-            if (workerError === undefined) {
-              workerError = error instanceof Error ? error : new Error(String(error));
-            }
-          });
+        child.kill("SIGKILL");
       };
 
-      worker.once("message", (message: unknown) => {
+      child.once("message", (message: unknown) => {
         if (!isWorkerResponse(message)) {
-          workerError = new Error("SQL Lab worker returned an invalid response.");
+          childError = new Error("SQL Lab child returned an invalid response.");
           if (timeoutId !== undefined) {
             clearTimeout(timeoutId);
           }
@@ -82,16 +85,23 @@ export class SqlLabWorkerExecutionHost implements SqlLabExecutionHost {
         if (timeoutId !== undefined) {
           clearTimeout(timeoutId);
         }
-        requestTermination();
       });
-      worker.once("error", (error) => {
-        workerError ??= error;
+      child.once("error", (error) => {
+        childError ??= error;
         if (timeoutId !== undefined) {
           clearTimeout(timeoutId);
         }
         requestTermination();
       });
-      worker.once("exit", handleExit);
+      child.once("exit", handleExit);
+
+      child.send(request, (error) => {
+        if (error === undefined || error === null) {
+          return;
+        }
+        childError ??= error;
+        requestTermination();
+      });
 
       timeoutId = setTimeout(() => {
         timedOut = true;
@@ -101,9 +111,9 @@ export class SqlLabWorkerExecutionHost implements SqlLabExecutionHost {
   }
 }
 
-async function resolveWorkerEntry(): Promise<URL> {
-  const workerModule = await import("./sqlite-execution.worker");
-  return new URL(workerModule.SQL_LAB_WORKER_ENTRY_URL);
+async function resolveChildEntry(): Promise<string> {
+  const childModule = await import("./sqlite-execution.child.ts");
+  return fileURLToPath(new URL(childModule.SQL_LAB_CHILD_ENTRY_URL));
 }
 
 function timeoutResponse(request: SqlLabWorkerRequest): SqlLabWorkerResponse {

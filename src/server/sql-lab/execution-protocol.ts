@@ -3,7 +3,7 @@ import type {
   SqlExecutionReport,
   SqlLabError,
   SqlSchema,
-} from "@/sql-lab/contract";
+} from "#/sql-lab/contract.ts";
 
 export type SqlLabWorkerRequest =
   | { operation: "execute"; databasePath: string; sql: string }

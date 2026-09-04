@@ -1,4 +1,4 @@
-import type { SqlLabError, SqlLabErrorCode } from "@/sql-lab/contract";
+import type { SqlLabError, SqlLabErrorCode } from "#/sql-lab/contract.ts";
 
 const PUBLIC_SQLITE_ERROR_CODES = [
   "INVALID_REQUEST",

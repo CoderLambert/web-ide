@@ -1,7 +1,7 @@
 import type { SqlLabError, SqlLabRequest, SqlLabResponse } from "@/sql-lab/contract";
 import type { SqlLabWorkerRequest } from "@/server/sql-lab/execution-protocol";
 import {
-  SqlLabWorkerExecutionHost,
+  SqlLabChildProcessExecutionHost,
   type SqlLabExecutionHost,
 } from "@/server/sql-lab/execution-host";
 
@@ -19,7 +19,7 @@ export class SqlLabService {
 
   constructor(options: SqlLabServiceOptions) {
     this.#databasePath = options.databasePath;
-    this.#executionHost = options.executionHost ?? new SqlLabWorkerExecutionHost();
+    this.#executionHost = options.executionHost ?? new SqlLabChildProcessExecutionHost();
   }
 
   run(request: SqlLabRequest): Promise<SqlLabResponse> {

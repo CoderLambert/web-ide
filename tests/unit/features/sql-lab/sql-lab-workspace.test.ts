@@ -29,6 +29,7 @@ describe("SQL Lab workspace files", () => {
 
   it("chooses a non-conflicting new SQL file name", () => {
     expect(nextSqlFileName([])).toBe("query.sql");
+    expect(nextSqlFileName(["src/query.sql"])).toBe("query-1.sql");
     expect(nextSqlFileName(["query.sql", "query-1.sql", "query-3.sql"])).toBe("query-2.sql");
   });
 });
