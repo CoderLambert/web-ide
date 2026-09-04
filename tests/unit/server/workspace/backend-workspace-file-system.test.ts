@@ -1,4 +1,5 @@
 import {
+  chmod,
   mkdtemp,
   lstat,
   mkdir,
@@ -6,6 +7,7 @@ import {
   readdir,
   rm,
   symlink,
+  stat,
   writeFile as writeHostFile,
 } from "node:fs/promises";
 import { join } from "node:path";
@@ -158,6 +160,35 @@ describe("BackendWorkspaceFileSystem", () => {
     expect(await readHostFile(join(workspaceRoot, "bom.sql"))).toEqual(
       Buffer.from(content, "utf8"),
     );
+  });
+
+  it("preserves the existing file permissions across an atomic write", async () => {
+    const target = join(workspaceRoot, "permissions.txt");
+    await writeHostFile(target, "initial", "utf8");
+    await chmod(target, 0o640);
+
+    await fileSystem.writeFile("permissions.txt", "updated");
+
+    expect((await stat(target)).mode & 0o777).toBe(0o640);
+  });
+
+  it("leaves the original file intact when the atomic write cannot create a temporary file", async () => {
+    const protectedRoot = join(workspaceRoot, "protected");
+    const target = join(protectedRoot, "document.txt");
+    await mkdir(protectedRoot);
+    await writeHostFile(target, "original", "utf8");
+    await chmod(protectedRoot, 0o555);
+
+    try {
+      await expectCode(
+        () => fileSystem.writeFile("protected/document.txt", "replacement"),
+        "FORBIDDEN",
+      );
+    } finally {
+      await chmod(protectedRoot, 0o755);
+    }
+
+    expect(await readHostFile(target, "utf8")).toBe("original");
   });
 
   it("authorizes workspace identity before resolving its server-owned root", async () => {

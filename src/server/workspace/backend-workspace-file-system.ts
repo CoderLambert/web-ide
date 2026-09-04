@@ -1,7 +1,6 @@
 import {
   lstat,
   mkdir,
-  open,
   readFile,
   readdir,
   realpath,
@@ -11,6 +10,7 @@ import {
   writeFile,
 } from "node:fs/promises";
 import { dirname, isAbsolute, relative, resolve, sep } from "node:path";
+import writeFileAtomic from "write-file-atomic";
 
 import {
   WorkspaceFileSystemError,
@@ -83,13 +83,10 @@ export class BackendWorkspaceFileSystem implements WorkspaceFileSystem {
     await this.run("write file", async () => {
       const { target, stats } = await this.resolveExisting(workspacePath);
       this.requireFile(stats);
-      const file = await open(target, "r+");
-      try {
-        await file.truncate(0);
-        await file.writeFile(content, { encoding: "utf8" });
-      } finally {
-        await file.close();
-      }
+      await writeFileAtomic(target, content, {
+        encoding: "utf8",
+        fsync: true,
+      });
     });
   }
 

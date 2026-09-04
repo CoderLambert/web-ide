@@ -40,6 +40,7 @@
     "react-dom": "19.2.0",
     "vscode-ws-jsonrpc": "3.5.0",
     "web-tree-sitter": "0.25.10",
+    "write-file-atomic": "8.0.0",
     "ws": "8.21.3"
   },
   "devDependencies": {
@@ -47,6 +48,7 @@
     "@types/node": "24.13.3",
     "@types/react": "^19.2.0",
     "@types/react-dom": "^19.2.0",
+    "@types/write-file-atomic": "4.0.3",
     "@vitejs/plugin-react": "6.1.1",
     "playwright": "1.62.1",
     "tree-sitter-cli": "0.25.10",
