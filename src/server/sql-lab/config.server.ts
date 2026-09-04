@@ -2,6 +2,7 @@ import { handleSqlLabApiRequest } from "@/server/sql-lab/api";
 import { assertDatabasePathOutsideWorkspace } from "@/server/sql-lab/database-path";
 import { SqlLabService } from "@/server/sql-lab/service";
 import type { SqlLabResponse } from "@/sql-lab/contract";
+import { isConfiguredValue } from "../configuration";
 
 export interface ServerSqlLabConfiguration {
   workspaceId?: string;
@@ -24,33 +25,15 @@ export function handleConfiguredSqlLabApiRequest(request: Request): Promise<Resp
 export function createSqlLabApiHandler(
   configuration: ServerSqlLabConfiguration,
 ): (request: Request) => Promise<Response> {
-  const databasePath = configuration.databasePath?.trim() ?? "";
-  const workspaceRoot = configuration.workspaceRoot?.trim() ?? "";
-  const isolated = databasePath !== "" && workspaceRoot !== "";
-  if (isolated) {
-    assertDatabasePathOutsideWorkspace(databasePath, workspaceRoot);
-  }
-  const service = isolated
-    ? new SqlLabService({ databasePath })
-    : {
-        async run(): Promise<SqlLabResponse> {
-          return {
-            ok: false,
-            error: {
-              code: "DATABASE_UNAVAILABLE",
-              message: "The SQL Lab database is unavailable.",
-            },
-          };
-        },
-      };
+  const service = createSqlLabService(configuration);
   return (request) =>
     handleSqlLabApiRequest(request, {
       service,
       authorize(workspaceId) {
         const token = readCookie(request.headers.get("cookie"), "web_ide_workspace_token");
         if (
-          configuration.workspaceId === undefined ||
-          configuration.token === undefined ||
+          !isConfiguredValue(configuration.workspaceId) ||
+          !isConfiguredValue(configuration.token) ||
           workspaceId !== configuration.workspaceId ||
           token !== configuration.token
         ) {
@@ -58,6 +41,28 @@ export function createSqlLabApiHandler(
         }
       },
     });
+}
+
+function createSqlLabService(configuration: ServerSqlLabConfiguration) {
+  if (
+    isConfiguredValue(configuration.databasePath) &&
+    isConfiguredValue(configuration.workspaceRoot)
+  ) {
+    assertDatabasePathOutsideWorkspace(configuration.databasePath, configuration.workspaceRoot);
+    return new SqlLabService({ databasePath: configuration.databasePath });
+  }
+
+  return {
+    async run(): Promise<SqlLabResponse> {
+      return {
+        ok: false,
+        error: {
+          code: "DATABASE_UNAVAILABLE",
+          message: "The SQL Lab database is unavailable.",
+        },
+      };
+    },
+  };
 }
 
 class SqlLabApiAuthorizationError extends Error {

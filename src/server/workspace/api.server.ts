@@ -1,4 +1,5 @@
 import { WorkspaceFileSystemError } from "../../workspace/file-system";
+import { isConfiguredValue } from "../configuration";
 import { handleWorkspaceApiRequest } from "./api";
 
 export interface ServerWorkspaceConfiguration {
@@ -24,9 +25,9 @@ export function handleWorkspaceApiRequestWithConfiguration(
     authorizer: {
       async authorize(workspaceId) {
         if (
-          configuration.workspaceId === undefined ||
+          !isConfiguredValue(configuration.workspaceId) ||
           workspaceId !== configuration.workspaceId ||
-          configuration.token === undefined ||
+          !isConfiguredValue(configuration.token) ||
           workspaceToken !== configuration.token
         ) {
           throw new WorkspaceFileSystemError("FORBIDDEN", "Workspace access denied.");
@@ -35,7 +36,7 @@ export function handleWorkspaceApiRequestWithConfiguration(
     },
     rootResolver: {
       async resolveRoot() {
-        if (configuration.root === undefined) {
+        if (!isConfiguredValue(configuration.root)) {
           throw new WorkspaceFileSystemError("IO_ERROR", "Workspace is unavailable.");
         }
         return configuration.root;
