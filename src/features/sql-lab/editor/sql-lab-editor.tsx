@@ -1,16 +1,20 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import type * as Monaco from "monaco-editor/esm/vs/editor/editor.api.js";
 import "monaco-editor/esm/vs/basic-languages/sql/sql.contribution.js";
 
+import { Button } from "@/components/ui/button";
 import { MonacoWorkspaceModelService } from "@/editor/monaco/workspace-model-service";
+import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable";
 import { SqlLabSyntaxRuntime } from "@/features/sql-lab/editor/sql-lab-syntax-runtime";
 import {
+  createDirectoryLoader,
   isSqlFileEntry,
   listSqlDirectory,
   nextSqlFileName,
-  scheduleDirectoryLoad,
 } from "@/features/sql-lab/editor/sql-lab-workspace";
+import type { DirectoryLoader } from "@/features/sql-lab/editor/sql-lab-workspace";
+import { SqlFileExplorer } from "@/features/sql-lab/editor/sql-file-explorer";
 import { resolveSqlQuerySource, type SqlQuerySourceMode } from "@/features/sql-lab/query-source";
 import { RemoteWorkspaceFileSystem } from "@/workspace/remote-workspace-file-system";
 import { WorkspaceDocumentManager } from "@/workspace/workspace-document-manager";
@@ -18,8 +22,6 @@ import type { WorkspaceEntry } from "@/workspace/file-system";
 import type { WorkspacePath } from "@/workspace/path";
 
 let monacoRuntimePromise: Promise<typeof Monaco> | undefined;
-
-type DirectoryLoader = (path: WorkspacePath, force?: boolean) => Promise<WorkspaceEntry[]>;
 
 function loadMonacoRuntime(): Promise<typeof Monaco> {
   monacoRuntimePromise ??= Promise.all([
@@ -62,9 +64,10 @@ export function SqlLabEditor({
   const activePathRef = useRef<WorkspacePath | undefined>(undefined);
   const modelListenerRef = useRef<Monaco.IDisposable | undefined>(undefined);
   const openFileRef = useRef<(path: WorkspacePath) => Promise<void>>(async () => undefined);
-  const loadDirectoryRef = useRef<DirectoryLoader>(async () => []);
-  const loadedDirectoriesRef = useRef(new Set<string>());
-  const directoryLoadsRef = useRef(new Map<string, Promise<WorkspaceEntry[]>>());
+  const loadDirectoryRef = useRef<
+    (path: WorkspacePath, force?: boolean) => Promise<WorkspaceEntry[]>
+  >(async () => []);
+  const directoryLoaderRef = useRef<DirectoryLoader<WorkspaceEntry[]> | undefined>(undefined);
   const directoryEntriesRef = useRef(new Map<string, WorkspaceEntry[]>());
   const mountedRef = useRef(false);
   const creatingFileRef = useRef(false);
@@ -80,10 +83,12 @@ export function SqlLabEditor({
     () => new Map<string, WorkspaceEntry[]>(),
   );
   const [expandedDirectories, setExpandedDirectories] = useState(() => new Set<string>());
+  const [loadingDirectories, setLoadingDirectories] = useState(() => new Set<string>());
   const [activePath, setActivePath] = useState<WorkspacePath>();
   const [dirty, setDirty] = useState(false);
   const [state, setState] = useState<"loading" | "ready" | "error">("loading");
   const [creatingFile, setCreatingFile] = useState(false);
+  const [showHidden, setShowHidden] = useState(false);
   const [error, setError] = useState("");
   onRunRef.current = onRun;
   onExplainRef.current = onExplain;
@@ -93,11 +98,18 @@ export function SqlLabEditor({
     const host = hostRef.current;
     let cancelled = false;
     mountedRef.current = true;
-    loadedDirectoriesRef.current.clear();
-    directoryLoadsRef.current.clear();
+    directoryLoaderRef.current?.clear();
+    directoryLoaderRef.current = undefined;
     directoryEntriesRef.current = new Map();
     setDirectoryEntries(new Map());
     setExpandedDirectories(new Set());
+    setLoadingDirectories(new Set());
+    setActivePath(undefined);
+    setDirty(false);
+    setState("loading");
+    setCreatingFile(false);
+    setShowHidden(false);
+    setError("");
     if (host === null) {
       setState("error");
       setError("SQL editor host is unavailable.");
@@ -133,17 +145,16 @@ export function SqlLabEditor({
         fileSystemRef.current = fileSystem;
         editorRef.current = editor;
         syntaxRuntimeRef.current = syntaxRuntime;
-        const loadDirectory: DirectoryLoader = async (path, force = false) => {
-          const cached = directoryEntriesRef.current.get(path);
-          if (!force && loadedDirectoriesRef.current.has(path)) {
-            return cached ?? [];
-          }
-
-          const listed = await scheduleDirectoryLoad(directoryLoadsRef.current, path, force, () =>
-            listSqlDirectory(fileSystem, path),
-          );
+        const directoryLoader = createDirectoryLoader<WorkspaceEntry[]>((path) =>
+          listSqlDirectory(fileSystem, path),
+        );
+        directoryLoaderRef.current = directoryLoader;
+        const loadDirectory: (
+          path: WorkspacePath,
+          force?: boolean,
+        ) => Promise<WorkspaceEntry[]> = async (path, force = false) => {
+          const listed = await directoryLoader.load(path, force);
           if (!cancelled) {
-            loadedDirectoriesRef.current.add(path);
             const nextEntries = new Map(directoryEntriesRef.current);
             nextEntries.set(path, listed);
             directoryEntriesRef.current = nextEntries;
@@ -162,7 +173,9 @@ export function SqlLabEditor({
         if (firstRootSqlFile !== undefined) {
           await openFile(firstRootSqlFile.path);
         }
-        setState("ready");
+        if (!cancelled) {
+          setState("ready");
+        }
       })
       .catch((initializationError: unknown) => {
         if (!cancelled) {
@@ -184,6 +197,8 @@ export function SqlLabEditor({
       cancelled = true;
       mountedRef.current = false;
       creatingFileRef.current = false;
+      directoryLoaderRef.current?.clear();
+      directoryLoaderRef.current = undefined;
       openFileRef.current = async () => undefined;
       loadDirectoryRef.current = async () => [];
       runQueryRef.current = async () => undefined;
@@ -206,6 +221,9 @@ export function SqlLabEditor({
     };
 
     async function openFile(path: WorkspacePath): Promise<void> {
+      if (cancelled) {
+        return;
+      }
       const manager = managerRef.current;
       const editor = editorRef.current;
       if (manager === undefined || editor === undefined) {
@@ -222,17 +240,28 @@ export function SqlLabEditor({
         modelListenerRef.current = undefined;
         editor.setModel(null);
         await manager.close(currentPath);
+        if (cancelled || managerRef.current !== manager || editorRef.current !== editor) {
+          return;
+        }
       }
       const document = await manager.open(path, "sql");
+      if (cancelled || managerRef.current !== manager || editorRef.current !== editor) {
+        await manager.close(path).catch(() => undefined);
+        return;
+      }
       editor.setModel(document.model);
       modelListenerRef.current?.dispose();
       modelListenerRef.current = document.model.onDidChangeContent(() => {
-        setDirty(manager.isDirty(path));
+        if (!cancelled) {
+          setDirty(manager.isDirty(path));
+        }
       });
       activePathRef.current = path;
-      setActivePath(path);
-      setDirty(document.dirty);
-      setError("");
+      if (!cancelled) {
+        setActivePath(path);
+        setDirty(document.dirty);
+        setError("");
+      }
     }
 
     async function resolveAndInvoke(
@@ -247,6 +276,9 @@ export function SqlLabEditor({
       }
       try {
         const sql = await resolveSqlQuerySource(mode, editor, runtime.registry);
+        if (cancelled) {
+          return;
+        }
         if (sql === undefined || sql.trim() === "") {
           setError(`No SQL source is available for ${action} ${mode}.`);
           return;
@@ -257,7 +289,9 @@ export function SqlLabEditor({
         }
         await callback(mode, sql);
       } catch (runError: unknown) {
-        setError(runError instanceof Error ? runError.message : "Unable to resolve SQL source.");
+        if (!cancelled) {
+          setError(runError instanceof Error ? runError.message : "Unable to resolve SQL source.");
+        }
       }
     }
 
@@ -277,7 +311,9 @@ export function SqlLabEditor({
       try {
         await onResetRef.current();
       } catch (resetError: unknown) {
-        setError(resetError instanceof Error ? resetError.message : "Unable to reset SQL Lab.");
+        if (!cancelled) {
+          setError(resetError instanceof Error ? resetError.message : "Unable to reset SQL Lab.");
+        }
       }
     }
   }, [workspaceId]);
@@ -293,15 +329,29 @@ export function SqlLabEditor({
     }
 
     setExpandedDirectories((current) => new Set(current).add(path));
+    setLoadingDirectories((current) => new Set(current).add(path));
     try {
       await loadDirectoryRef.current(path);
     } catch (directoryError: unknown) {
       if (mountedRef.current) {
+        setExpandedDirectories((current) => {
+          const next = new Set(current);
+          next.delete(path);
+          return next;
+        });
         setError(
           directoryError instanceof Error
             ? directoryError.message
             : "Unable to load workspace directory.",
         );
+      }
+    } finally {
+      if (mountedRef.current) {
+        setLoadingDirectories((current) => {
+          const next = new Set(current);
+          next.delete(path);
+          return next;
+        });
       }
     }
   }
@@ -343,139 +393,138 @@ export function SqlLabEditor({
     }
     try {
       await manager.save(path);
-      setDirty(manager.isDirty(path));
-      setError("");
+      if (mountedRef.current && managerRef.current === manager) {
+        setDirty(manager.isDirty(path));
+        setError("");
+      }
     } catch (saveError: unknown) {
-      setError(saveError instanceof Error ? saveError.message : "Unable to save SQL file.");
+      if (mountedRef.current) {
+        setError(saveError instanceof Error ? saveError.message : "Unable to save SQL file.");
+      }
     }
   }
 
-  function renderDirectory(path: WorkspacePath, depth = 0): ReactNode {
-    return (directoryEntries.get(path) ?? []).map((entry) => {
-      if (entry.kind === "directory") {
-        const expanded = expandedDirectories.has(entry.path);
-        const label = entry.path.slice(entry.path.lastIndexOf("/") + 1);
-        return (
-          <div key={entry.path}>
-            <button
-              aria-expanded={expanded}
-              data-testid={`sql-lab-directory-${entry.path}`}
-              onClick={() => void toggleDirectory(entry.path)}
-              style={{ paddingLeft: depth * 16 }}
-              type="button"
-            >
-              {label}
-            </button>
-            {expanded ? renderDirectory(entry.path, depth + 1) : null}
-          </div>
-        );
-      }
-
-      return (
-        <button
-          data-active={String(entry.path === activePath)}
-          key={entry.path}
-          onClick={() => void openFileRef.current(entry.path)}
-          style={{ paddingLeft: depth * 16 }}
-          type="button"
-        >
-          {entry.path}
-        </button>
-      );
-    });
-  }
-
   return (
-    <section data-testid="sql-lab-editor" style={{ display: "grid", gap: 12, padding: 24 }}>
-      <div style={{ alignItems: "center", display: "flex", gap: 8, flexWrap: "wrap" }}>
-        <strong>SQL Lab</strong>
-        <span data-testid="sql-lab-state">{state}</span>
+    <section className="grid min-h-0 gap-3 p-6" data-testid="sql-lab-editor">
+      <div className="flex flex-wrap items-center gap-2">
+        <strong className="mr-1 text-sm font-semibold">SQL Lab</strong>
+        <span
+          className="rounded-full border px-2 py-0.5 text-xs text-muted-foreground"
+          data-testid="sql-lab-state"
+        >
+          {state}
+        </span>
         {activePath !== undefined ? (
-          <span>
+          <span className="min-w-0 truncate text-sm text-muted-foreground" title={activePath}>
             {activePath}
             {dirty ? " *" : ""}
           </span>
         ) : null}
-        <button
-          data-testid="sql-lab-new"
-          disabled={state !== "ready" || creatingFile}
-          onClick={() => void createFile()}
-          type="button"
-        >
-          New
-        </button>
-        <button
+        <Button
           data-testid="sql-lab-save"
           disabled={activePath === undefined || !dirty}
           onClick={() => void saveFile()}
+          size="sm"
           type="button"
+          variant="outline"
         >
           Save
-        </button>
+        </Button>
         <fieldset
+          className="flex items-center gap-1.5 border-0 p-0"
           disabled={operationActive || activePath === undefined || state !== "ready"}
-          style={{ border: 0, display: "flex", gap: 8, margin: 0, padding: 0 }}
         >
-          <legend>Run</legend>
-          <button
+          <legend className="sr-only">Run</legend>
+          <Button
             data-testid="sql-lab-run-current"
             onClick={() => void runQueryRef.current("current")}
+            size="sm"
             type="button"
           >
             Run Current
-          </button>
-          <button
+          </Button>
+          <Button
             data-testid="sql-lab-run-selection"
             onClick={() => void runQueryRef.current("selection")}
+            size="sm"
             type="button"
           >
             Run Selection
-          </button>
-          <button
+          </Button>
+          <Button
             data-testid="sql-lab-run-all"
             onClick={() => void runQueryRef.current("all")}
+            size="sm"
             type="button"
           >
             Run All
-          </button>
+          </Button>
         </fieldset>
         <fieldset
+          className="flex items-center gap-1.5 border-0 p-0"
           disabled={operationActive || state !== "ready"}
-          style={{ border: 0, display: "flex", gap: 8, margin: 0, padding: 0 }}
         >
-          <legend>Schema</legend>
-          <button
+          <legend className="sr-only">Schema</legend>
+          <Button
             data-testid="sql-lab-explain-current"
             disabled={activePath === undefined}
             onClick={() => void explainQueryRef.current("current")}
+            size="sm"
             type="button"
           >
             Explain Current
-          </button>
-          <button
+          </Button>
+          <Button
             data-testid="sql-lab-explain-selection"
             disabled={activePath === undefined}
             onClick={() => void explainQueryRef.current("selection")}
+            size="sm"
             type="button"
           >
             Explain Selection
-          </button>
-          <button data-testid="sql-lab-reset" onClick={() => void resetRef.current()} type="button">
+          </Button>
+          <Button
+            data-testid="sql-lab-reset"
+            onClick={() => void resetRef.current()}
+            size="sm"
+            type="button"
+            variant="outline"
+          >
             Reset Demo
-          </button>
+          </Button>
         </fieldset>
       </div>
       {error !== "" ? (
-        <p aria-live="polite" data-testid="sql-lab-error">
+        <p aria-live="polite" className="m-0 text-sm text-destructive" data-testid="sql-lab-error">
           {error}
         </p>
       ) : null}
-      <div style={{ display: "grid", gap: 12, gridTemplateColumns: "220px minmax(0, 1fr)" }}>
-        <nav aria-label="SQL files" style={{ display: "grid", gap: 4, alignContent: "start" }}>
-          {renderDirectory("")}
-          {directoryEntries.get("")?.length === 0 ? <span>No .sql files</span> : null}
-        </nav>
-        <div ref={hostRef} style={{ border: "1px solid currentColor", minHeight: 480 }} />
+      <div
+        className="min-h-[30rem] min-w-0 overflow-hidden rounded-lg border bg-background"
+        data-testid="sql-lab-resizable"
+      >
+        <ResizablePanelGroup className="h-full min-h-[30rem] min-w-0" orientation="horizontal">
+          <ResizablePanel defaultSize="23" maxSize="36" minSize="16">
+            <SqlFileExplorer
+              activePath={activePath}
+              creatingFile={creatingFile || state !== "ready"}
+              entriesByDirectory={directoryEntries}
+              expandedDirectories={expandedDirectories}
+              loadingDirectories={loadingDirectories}
+              onCreateFile={() => void createFile()}
+              onOpenFile={(path) => void openFileRef.current(path)}
+              onShowHiddenChange={setShowHidden}
+              onToggleDirectory={(path) => void toggleDirectory(path)}
+              rootEntries={directoryEntries.get("") ?? []}
+              rootLoading={state === "loading"}
+              showHidden={showHidden}
+            />
+          </ResizablePanel>
+          <ResizableHandle aria-label="Resize SQL files and editor" withHandle />
+          <ResizablePanel className="min-w-0" minSize="40">
+            <div className="h-full min-h-[30rem] min-w-0 border-l bg-background" ref={hostRef} />
+          </ResizablePanel>
+        </ResizablePanelGroup>
       </div>
     </section>
   );

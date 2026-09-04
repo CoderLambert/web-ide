@@ -217,16 +217,38 @@ test("proves the production SQL Lab API and browser flow", async ({ page, reques
   });
   await expect(page.locator('[data-testid="sql-lab-editor"] .monaco-editor')).toHaveCount(1);
   await expect(page.locator('[data-testid="sql-lab-schema"]')).toContainText("customers");
+  await expect(page.locator('[data-testid="sql-lab-file-explorer"]')).toBeVisible();
+  await expect(page.locator('[data-testid="sql-lab-resizable"]')).toBeVisible();
+  await expect(page.getByRole("separator", { name: "Resize SQL files and editor" })).toBeVisible();
+  await expect(page.locator('[data-testid="sql-lab-directory-.hidden"]')).toHaveCount(0);
+  await expect(page.locator('[data-testid="sql-lab-directory-node_modules"]')).toHaveCount(0);
+  await expect(page.locator('[data-testid="sql-lab-directory-dist"]')).toHaveCount(0);
+  await expect(page.locator('[data-testid="sql-lab-directory-build"]')).toHaveCount(0);
+  await expect(page.locator('[data-testid="sql-lab-directory-coverage"]')).toHaveCount(0);
+
+  const showHidden = page.locator('[data-testid="sql-lab-show-hidden"]');
+  await expect(showHidden).toHaveAttribute("aria-pressed", "false");
+  await showHidden.click();
+  await expect(showHidden).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByRole("button", { name: ".hidden", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "node_modules", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "dist", exact: true })).toBeVisible();
+  expect(workspaceListPaths).toEqual([""]);
 
   const sourceDirectory = page.getByRole("button", { name: "src", exact: true });
   await sourceDirectory.click();
-  await expect(page.getByRole("button", { name: "src/query.sql", exact: true })).toBeVisible();
+  await expect(page.locator('[data-testid="sql-lab-file-src/query.sql"]')).toBeVisible();
+  await expect(page.locator('[data-testid="sql-lab-file-src/nested.sql"]')).toBeVisible();
   expect(workspaceListPaths).toEqual(["", "src"]);
   await sourceDirectory.click();
   await sourceDirectory.click();
-  await expect(page.getByRole("button", { name: "src/query.sql", exact: true })).toBeVisible();
+  await expect(page.locator('[data-testid="sql-lab-file-src/query.sql"]')).toBeVisible();
   expect(workspaceListPaths).toEqual(["", "src"]);
-  await page.getByRole("button", { name: "src/query.sql", exact: true }).click();
+  await page.locator('[data-testid="sql-lab-file-src/query.sql"]').click();
+
+  await page.getByRole("button", { name: ".hidden", exact: true }).click();
+  await expect(page.getByRole("button", { name: "secret.sql", exact: true })).toBeVisible();
+  expect(workspaceListPaths).toEqual(["", "src", ".hidden"]);
 
   await replaceEditorContent(page, "SELECT 41 AS answer;");
   await expect(page.locator('[data-testid="sql-lab-save"]')).toBeEnabled();
@@ -256,9 +278,9 @@ test("proves the production SQL Lab API and browser flow", async ({ page, reques
   const newButton = page.locator('[data-testid="sql-lab-new"]');
   await newButton.dispatchEvent("click");
   await newButton.dispatchEvent("click");
-  const newFile = page.getByRole("button", { name: "query.sql", exact: true });
+  const newFile = page.locator('[data-testid="sql-lab-file-query.sql"]');
   await expect(newFile).toBeVisible();
-  expect(workspaceListPaths).toEqual(["", "src", ""]);
+  expect(workspaceListPaths).toEqual(["", "src", ".hidden", ""]);
   await replaceEditorContent(page, "SELECT 7 AS new_file;");
   await page.locator('[data-testid="sql-lab-save"]').click();
   await expect(page.locator('[data-testid="sql-lab-save"]')).toBeDisabled();
@@ -266,7 +288,7 @@ test("proves the production SQL Lab API and browser flow", async ({ page, reques
     "SELECT 7 AS new_file;",
   );
 
-  await page.getByRole("button", { name: "src/query.sql", exact: true }).click();
+  await page.locator('[data-testid="sql-lab-file-src/query.sql"]').click();
   await page.locator('[data-testid="sql-lab-run-all"]').click();
   await expectCompleted(page);
   await expect(page.locator('[data-testid="sql-lab-results"]')).toContainText("41");

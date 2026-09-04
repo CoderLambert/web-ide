@@ -217,8 +217,23 @@ let preview;
 
 try {
   await mkdir(join(workspaceRoot, "src"), { recursive: true });
+  await mkdir(join(workspaceRoot, ".hidden"), { recursive: true });
+  await mkdir(join(workspaceRoot, "node_modules"), { recursive: true });
+  await mkdir(join(workspaceRoot, "dist"), { recursive: true });
+  await mkdir(join(workspaceRoot, "build"), { recursive: true });
+  await mkdir(join(workspaceRoot, "coverage"), { recursive: true });
   await mkdir(outsideRoot, { recursive: true });
   await writeFile(join(workspaceRoot, "src", "query.sql"), "SELECT 'initial';\n", "utf8");
+  await writeFile(join(workspaceRoot, "src", "nested.sql"), "SELECT 'nested';\n", "utf8");
+  await writeFile(join(workspaceRoot, ".hidden", "secret.sql"), "SELECT 'hidden';\n", "utf8");
+  await writeFile(
+    join(workspaceRoot, "node_modules", "package.sql"),
+    "SELECT 'generated';\n",
+    "utf8",
+  );
+  await writeFile(join(workspaceRoot, "dist", "generated.sql"), "SELECT 'dist';\n", "utf8");
+  await writeFile(join(workspaceRoot, "build", "generated.sql"), "SELECT 'build';\n", "utf8");
+  await writeFile(join(workspaceRoot, "coverage", "generated.sql"), "SELECT 'coverage';\n", "utf8");
   await writeFile(join(outsideRoot, "secret.txt"), "outside", "utf8");
   await symlink(join(outsideRoot, "secret.txt"), join(workspaceRoot, "escape-link"));
   await run("pnpm", ["build"], { env: cleanEnvironment });
