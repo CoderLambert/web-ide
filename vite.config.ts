@@ -1,4 +1,5 @@
 import { defineConfig, lazyPlugins, type Connect, type Plugin } from "vite-plus";
+import tailwindcss from "@tailwindcss/vite";
 import { tanstackStart } from "@tanstack/react-start/plugin/vite";
 import viteReact from "@vitejs/plugin-react";
 import { createLocalWorkspaceSessionBootstrapMiddleware } from "./src/server/workspace/local-session-bootstrap";
@@ -92,5 +93,10 @@ export default defineConfig({
   resolve: {
     tsconfigPaths: true,
   },
-  plugins: lazyPlugins(() => [chromeDevToolsWorkspacePlugin(), tanstackStart(), viteReact()]),
+  plugins: lazyPlugins(() => [
+    chromeDevToolsWorkspacePlugin(),
+    tailwindcss(),
+    tanstackStart(),
+    viteReact(),
+  ]),
 });
