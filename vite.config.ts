@@ -1,6 +1,7 @@
 import { defineConfig, lazyPlugins, type Connect, type Plugin } from "vite-plus";
 import { tanstackStart } from "@tanstack/react-start/plugin/vite";
 import viteReact from "@vitejs/plugin-react";
+import { createLocalWorkspaceSessionBootstrapMiddleware } from "./src/server/workspace/local-session-bootstrap";
 
 const CHROME_DEVTOOLS_WORKSPACE_PATH = "/.well-known/appspecific/com.chrome.devtools.json";
 const CHROME_DEVTOOLS_WORKSPACE_UUID = "f1a2b3c4-5678-4abc-9def-0123456789ab";
@@ -28,14 +29,22 @@ const chromeDevToolsWorkspaceMiddleware: Connect.NextHandleFunction = (request, 
 };
 
 function chromeDevToolsWorkspacePlugin(): Plugin {
+  const localWorkspaceSessionBootstrap = createLocalWorkspaceSessionBootstrapMiddleware({
+    enabled: process.env.WEB_IDE_LOCAL_SESSION_BOOTSTRAP,
+    workspaceId: process.env.WEB_IDE_WORKSPACE_ID,
+    token: process.env.WEB_IDE_WORKSPACE_TOKEN,
+  });
+
   return {
     name: "web-ide:chrome-devtools-workspace",
     apply: "serve",
     enforce: "pre",
     configureServer(server) {
+      server.middlewares.use(localWorkspaceSessionBootstrap);
       server.middlewares.use(chromeDevToolsWorkspaceMiddleware);
     },
     configurePreviewServer(server) {
+      server.middlewares.use(localWorkspaceSessionBootstrap);
       server.middlewares.use(chromeDevToolsWorkspaceMiddleware);
     },
   };
