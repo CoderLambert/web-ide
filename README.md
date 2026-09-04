@@ -35,7 +35,20 @@ pnpm install --frozen-lockfile
 pnpm dev
 ```
 
-Open <http://localhost:3000/ide> to inspect the current runtime and M1 probes.
+Open <http://localhost:3000/sql-lab> for the local SQL Lab. On localhost, the Vite dev server
+provides the local workspace/session/database defaults automatically; no session environment
+variables are required.
+
+The production bundle can also be checked locally:
+
+```bash
+pnpm build
+pnpm preview
+```
+
+Then open <http://localhost:4173/sql-lab>. A real production deployment does not rely on these
+local defaults and must explicitly provide its workspace ID, workspace root, session token and
+SQL Lab database path.
 
 ## Verification
 

@@ -11,14 +11,15 @@ export interface ServerSqlLabConfiguration {
   databasePath?: string;
 }
 
-const configuredHandler = createSqlLabApiHandler({
-  workspaceId: process.env.WEB_IDE_WORKSPACE_ID,
-  workspaceRoot: process.env.WEB_IDE_WORKSPACE_ROOT,
-  token: process.env.WEB_IDE_WORKSPACE_TOKEN,
-  databasePath: process.env.WEB_IDE_SQL_LAB_DATABASE_PATH,
-});
+let configuredHandler: ((request: Request) => Promise<Response>) | undefined;
 
 export function handleConfiguredSqlLabApiRequest(request: Request): Promise<Response> {
+  configuredHandler ??= createSqlLabApiHandler({
+    workspaceId: process.env.WEB_IDE_WORKSPACE_ID,
+    workspaceRoot: process.env.WEB_IDE_WORKSPACE_ROOT,
+    token: process.env.WEB_IDE_WORKSPACE_TOKEN,
+    databasePath: process.env.WEB_IDE_SQL_LAB_DATABASE_PATH,
+  });
   return configuredHandler(request);
 }
 
