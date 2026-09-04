@@ -1,30 +1,42 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import { listSqlFiles, nextSqlFileName } from "@/features/sql-lab/editor/sql-lab-workspace";
+import { listSqlDirectory, nextSqlFileName } from "@/features/sql-lab/editor/sql-lab-workspace";
 
 describe("SQL Lab workspace files", () => {
-  it("recursively lists only SQL files in stable order", async () => {
+  it("lists one directory level and never recursively scans children", async () => {
+    const listCalls: string[] = [];
     const fileSystem = {
       async list(path: string) {
+        listCalls.push(path);
         if (path === "") {
           return [
             { path: "z.txt", kind: "file" as const },
-            { path: "queries", kind: "directory" as const },
+            { path: "src", kind: "directory" as const },
+            { path: "node_modules", kind: "directory" as const },
+            { path: "docs", kind: "directory" as const },
             { path: "top.SQL", kind: "file" as const },
           ];
         }
         return [
-          { path: "queries/b.sql", kind: "file" as const },
-          { path: "queries/a.sql", kind: "file" as const },
+          { path: "src/nested", kind: "directory" as const },
+          { path: "src/query.sql", kind: "file" as const },
         ];
       },
     };
 
-    await expect(listSqlFiles(fileSystem)).resolves.toEqual([
-      "queries/a.sql",
-      "queries/b.sql",
-      "top.SQL",
+    await expect(listSqlDirectory(fileSystem, "")).resolves.toEqual([
+      { path: "docs", kind: "directory" },
+      { path: "node_modules", kind: "directory" },
+      { path: "src", kind: "directory" },
+      { path: "top.SQL", kind: "file" },
     ]);
+    expect(listCalls).toEqual([""]);
+
+    await expect(listSqlDirectory(fileSystem, "src")).resolves.toEqual([
+      { path: "src/nested", kind: "directory" },
+      { path: "src/query.sql", kind: "file" },
+    ]);
+    expect(listCalls).toEqual(["", "src"]);
   });
 
   it("chooses a non-conflicting new SQL file name", () => {

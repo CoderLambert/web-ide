@@ -1,22 +1,19 @@
 import type { WorkspaceEntry, WorkspaceFileSystem } from "@/workspace/file-system";
 import type { WorkspacePath } from "@/workspace/path";
 
-export async function listSqlFiles(
+export async function listSqlDirectory(
   fileSystem: Pick<WorkspaceFileSystem, "list">,
-): Promise<WorkspacePath[]> {
-  const files: WorkspacePath[] = [];
-  const visit = async (path: WorkspacePath): Promise<void> => {
-    const entries = await fileSystem.list(path);
-    for (const entry of entries) {
-      if (entry.kind === "directory") {
-        await visit(entry.path);
-      } else if (entry.path.toLowerCase().endsWith(".sql")) {
-        files.push(entry.path);
+  path: WorkspacePath,
+): Promise<WorkspaceEntry[]> {
+  const entries = await fileSystem.list(path);
+  return entries
+    .filter((entry) => entry.kind === "directory" || isSqlFileEntry(entry))
+    .sort((left, right) => {
+      if (left.kind !== right.kind) {
+        return left.kind === "directory" ? -1 : 1;
       }
-    }
-  };
-  await visit("");
-  return files.sort((left, right) => left.localeCompare(right));
+      return left.path.localeCompare(right.path);
+    });
 }
 
 export function nextSqlFileName(paths: readonly WorkspacePath[]): WorkspacePath {
